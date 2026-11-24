@@ -92,7 +92,10 @@ input,select,textarea{background:var(--panel);border:1px solid var(--line);borde
 .seg button.al[aria-pressed="true"]{background:var(--bad);color:#fff}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .card h2{font-size:15px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);font-family:var(--display);font-weight:800}
-.tbl{overflow-x:auto}
+.tbl{overflow:auto;max-height:calc(100vh - 110px);overscroll-behavior-x:contain}
+.matrix,.tbl table{position:relative}
+th{z-index:2}
+@media (max-width:860px){.tbl{max-height:calc(100vh - 160px)}}
 table{border-collapse:collapse;width:100%;font-size:13px}
 th{position:sticky;top:0;background:var(--soft);text-align:left;font-weight:700;font-size:12px;color:var(--ink);padding:10px 12px;white-space:nowrap;border-bottom:1px solid var(--line);font-family:var(--display)}
 th.grp-c{background:var(--accent-soft)}
@@ -100,6 +103,9 @@ td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 tbody tr{cursor:pointer} tbody tr:hover{background:var(--soft)}
 .wide td{white-space:nowrap} .wide td.clip{max-width:320px}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+td:has(.cp){white-space:nowrap}
+.cp{border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:4px;font-size:12px;line-height:1;padding:3px 5px;margin-left:6px;cursor:pointer;vertical-align:middle}
+.cp:hover{color:var(--accent);border-color:var(--accent)} .cp.ok{color:#fff;background:var(--ok);border-color:var(--ok)}
 th .hf{border:0;background:none;color:var(--muted);cursor:pointer;padding:0 2px;margin-left:4px;font-size:11px;border-radius:3px}
 th .hf:hover{color:var(--accent);background:var(--accent-soft)}
 th .hf.on{color:#fff;background:var(--accent)}
@@ -497,6 +503,7 @@ function openHF(btn){
   const cur=F[key], r=btn.getBoundingClientRect(), w=280, left=Math.max(8,Math.min(r.left,innerWidth-w-8)), top=Math.min(r.bottom+4,innerHeight-120);
   $("#hfRoot").innerHTML=`<div class="hfpop" style="left:${left}px;top:${top}px;width:${w}px;max-height:${innerHeight-top-12}px" role="dialog" aria-label="Filtrar ${esc(key)}">
     <b>${esc(key)}</b>
+    <div class="bar"><button class="btn sm" id="hfAZ">↑ Ordenar A → Z</button><button class="btn sm" id="hfZA">↓ Ordenar Z → A</button></div>
     <input type="search" id="hfQ" placeholder="Buscar…" autocomplete="off">
     <label class="hfi"><input type="checkbox" id="hfAll"> (Seleccionar todo)</label>
     <div class="hfl">${vals.map((v,i)=>`<label class="hfi" data-t="${esc(norm(v))}"><input type="checkbox" class="hfv" value="${esc(v)}" ${!cur||cur.has(v)?"checked":""}> <span>${esc(v)}</span><span class="muted">${cnt.get(v)}</span></label>`).join("")}</div>
@@ -512,6 +519,8 @@ function openHF(btn){
     if(sel.size===vals.length) delete F[key]; else F[key]=sel; closeHF(); ST.limit=300; render(); };
   $("#hfClr").onclick=()=>{ delete F[key]; closeHF(); render(); };
   $("#hfNo").onclick=closeHF;
+  $("#hfAZ").onclick=()=>{ ST.sortC={view:ST.view,key,d:1}; closeHF(); render(); };
+  $("#hfZA").onclick=()=>{ ST.sortC={view:ST.view,key,d:-1}; closeHF(); render(); };
 }
 document.addEventListener("click",()=>closeHF());
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeHF(); });
@@ -520,9 +529,12 @@ function rowsTable(rows, cols, wideForce, after){
   const ti=ST.hfT.length; ST.hfT.push({cols,rows});
   const F=colFilters(), nAct=cols.filter(c=>!c.nof&&F[fKey(c)]).length;
   rows=applyColF(rows,cols);
+  const sc=ST.sortC&&ST.sortC.view===ST.view?cols.find(c=>!c.nof&&fKey(c)===ST.sortC.key):null;
+  if(sc){ const key=g=>{ const v=colVal(sc,g); if(v==="(vacías)") return "\uffff"; const m=v.match(/^(\d{2})\/(\d{2})\/(\d{4})/); return m?`${m[3]}-${m[2]}-${m[1]}${v.slice(10)}`:v; };
+    rows=rows.slice().sort((a,b)=>key(a).localeCompare(key(b),"es",{numeric:true,sensitivity:"base"})*ST.sortC.d); }
   const bar=nAct?`<div class="hfbar">Filtro en ${nAct} columna${nAct>1?"s":""} · ${rows.length} guías <button class="btn sm" data-hfclear>Quitar filtros</button></div>`:"";
   if(!rows.length) return bar+(nAct?`<div class="empty">Ninguna guía con esos filtros.</div>`:emptyMsg());
-  const th=cols.map((c,ci)=>`<th class="${c.num?"num":""} ${c.sm?"hide-sm":""}" ${c.k?`data-sort="${c.k}" style="cursor:pointer"`:""}>${c.h}${ST.sort.k===c.k?(ST.sort.d>0?" ▲":" ▼"):""}${c.nof?"":`<button class="hf ${F[fKey(c)]?"on":""}" data-hf="${ti}:${ci}" aria-label="Filtrar ${esc(fKey(c))}" title="Filtrar">▾</button>`}</th>`).join("");
+  const th=cols.map((c,ci)=>`<th class="${c.num?"num":""} ${c.sm?"hide-sm":""}" ${c.k?`data-sort="${c.k}" style="cursor:pointer"`:""}>${c.h}${sc?(sc===c?(ST.sortC.d>0?" ▲":" ▼"):""):(ST.sort.k===c.k?(ST.sort.d>0?" ▲":" ▼"):"")}${c.nof?"":`<button class="hf ${F[fKey(c)]?"on":""}" data-hf="${ti}:${ci}" aria-label="Filtrar ${esc(fKey(c))}" title="Filtrar">▾</button>`}</th>`).join("");
   const shown=rows.slice(0,ST.limit), wide=wideForce===undefined?cols.length>16:wideForce;
   const tb=shown.map(g=>`<tr tabindex="0" data-id="${esc(g._id)}" class="${after&&ST.openQ===g._id?"qopen":""}">${cols.map(c=>`<td class="${c.num?"num":""} ${c.cls||""} ${c.sm?"hide-sm":""}">${c.f(g)}</td>`).join("")}</tr>${after?after(g,cols.length):""}`).join("");
   const more=rows.length>shown.length?`<div class="empty"><button class="btn sm" id="more">Mostrar ${Math.min(300,rows.length-shown.length)} más (${rows.length-shown.length} ocultas)</button></div>`:"";
@@ -540,7 +552,7 @@ const C = {
   dest:{h:"Origen → Destino",k:"dest",v:g=>{const r=ruta(g);return `${r.o||"?"} → ${r.d||"?"}`;},f:g=>{const r=ruta(g);return `<span class="muted">${esc(r.o||"—")} → </span>${esc(r.d||"—")}`;},cls:"clip"},
   terr:{h:"Territorio",k:"terr",sm:1,f:g=>esc(g.terr)},
   grt:{h:"GR Tradel",k:"grt",f:g=>`<span class="mono">${esc(g.grt)}</span>`},
-  grb:{h:"GR BBVA",k:"grb",sm:1,f:g=>`<span class="mono">${esc(g.grb)}</span>`},
+  grb:{h:"GR BBVA",k:"grb",sm:1,f:g=>`<span class="mono">${t(g.grb)}</span>${g.grb?`<button class="cp" data-cp="${esc(g.grb)}" title="Copiar GR BBVA" aria-label="Copiar ${esc(g.grb)}">⧉</button>`:""}`},
   mani:{h:"Manifiesto",k:"mani",sm:1,f:g=>g.manif?`<span class="mono">${esc(g.manif.num)}</span>`:""},
   agen:{h:"Agencia / O/S",sm:1,f:g=>g.manif?`${esc(g.manif.agencia)}${g.manif.os?`<br><span class="mono muted">${esc(g.manif.os)}</span>`:""}`:"",cls:"clip"},
   fret:{h:"F. retiro",k:"fret",sm:1,f:g=>fmt(g.fret)},
@@ -556,7 +568,7 @@ const S = [
   {h:"F. guía",k:"fguia",f:g=>fmt(g.fguia)},
   {h:"COD",k:"co",f:g=>t(g.co)},
   {h:"Origen → Destino",k:"dest",v:g=>{const r=ruta(g);return `${r.o||"?"} → ${r.d||"?"}`;},f:g=>{const r=ruta(g);return `<span class="muted">${esc(r.o||"—")} → </span>${esc(r.d||"—")}`;},cls:"clip"},
-  C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>`},
+  C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>${g.grb?`<button class="cp" data-cp="${esc(g.grb)}" title="Copiar GR BBVA" aria-label="Copiar ${esc(g.grb)}">⧉</button>`:""}`},
   {h:"Bulto",k:"bultos",num:1,f:g=>t(g.bultos)},{h:"Peso kg",k:"peso",num:1,f:g=>t(g.peso)},
   {h:"Mini",k:"mini",f:g=>g.mini==="SI"?'<b>SI</b>':'<span class="muted">NO</span>'},
   {h:"Tipo",k:"tipo",f:g=>g.tipo==="EXP"?'<span class="pill p-FALSO">EXP</span>':t(g.tipo)},
@@ -566,7 +578,7 @@ const S = [
 ];
 const money0=n=>n?money(n):"";
 const W = [S[0],C.fguia,C.serv,{h:"CO",k:"co",f:g=>t(g.co)},{h:"Of. origen",k:"orig",f:g=>t(g.orig),cls:"clip"},{h:"Oficina destino",k:"dest",f:g=>t(g.dest),cls:"clip"},{h:"Dirección",f:g=>t(g.dir),cls:"clip"},{h:"Área",k:"area",f:g=>t(g.area)},
-  {h:"OF",k:"ofc",f:g=>t(g.ofc)},{h:"Zona",k:"zona",f:g=>t(g.zona)},{h:"TI",k:"ti",f:g=>t(g.ti)},{h:"Territorio",k:"terr",f:g=>t(g.terr)},{h:"Representante",k:"rep",f:g=>t(g.rep),cls:"clip"},C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>`},
+  {h:"OF",k:"ofc",f:g=>t(g.ofc)},{h:"Zona",k:"zona",f:g=>t(g.zona)},{h:"TI",k:"ti",f:g=>t(g.ti)},{h:"Territorio",k:"terr",f:g=>t(g.terr)},{h:"Representante",k:"rep",f:g=>t(g.rep),cls:"clip"},C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>${g.grb?`<button class="cp" data-cp="${esc(g.grb)}" title="Copiar GR BBVA" aria-label="Copiar ${esc(g.grb)}">⧉</button>`:""}`},
   {h:"Bultos",num:1,f:g=>t(g.bultos)},{h:"Peso kg",num:1,f:g=>t(g.peso)},S[8],S[9],S[10],{h:"Contenido",f:g=>t(g.cont),cls:"clip"},
   C.est,C.corte,C.vence,{h:"Manifiesto",k:"mani",f:g=>g.manif?`<span class="mono">${t(g.manif.num)}</span>`:""},{h:"F. despacho",f:g=>g.manif?t(g.manif.fecha):""},
   {h:"Agencia",f:g=>g.manif?t(g.manif.agencia):"",cls:"clip"},{h:"N° O/S",f:g=>g.manif?`<span class="mono">${t(g.manif.os)}</span>`:""},
@@ -618,7 +630,7 @@ function vPen(){
   const fT=qn(ST.pT), fB=qn(ST.pB);
   const rows=pend.filter(g=>(!fT||qn(g.grt).includes(fT))&&(!fB||qn(g.grb).includes(fB))).sort((a,b)=>sortVal(a,"vence")-sortVal(b,"vence"));
   if((fT||fB) && rows.length===1) ST.openQ=rows[0]._id;
-  const cols=[C.vence,C.est,C.serv,C.fguia,C.dest,{h:"Representante",k:"rep",f:g=>t(g.rep)},C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>`},C.mani,C.agen,
+  const cols=[C.vence,C.est,C.serv,C.fguia,C.dest,{h:"Representante",k:"rep",f:g=>t(g.rep)},C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>${g.grb?`<button class="cp" data-cp="${esc(g.grb)}" title="Copiar GR BBVA" aria-label="Copiar ${esc(g.grb)}">⧉</button>`:""}`},C.mani,C.agen,
     {h:"F. retiro / FF",k:"fret",v:g=>g.ff&&g.ff.fecha?"FF "+fmt(g.ff.fecha):g.fret?"Retiro "+fmt(g.fret):"",f:g=>g.ff&&g.ff.fecha?`<span class="pill p-FALSO">FF</span> ${fmt(g.ff.fecha)}`:g.fret?`Retiro ${fmt(g.fret)}`:""}];
   return `
   <div class="search"><div class="bar">
@@ -769,7 +781,7 @@ document.addEventListener("click",e=>{ if(e.target&&e.target.id==="scStop") stop
 function vAcu(){
   const all=list(), con=all.filter(g=>g.acuse&&!facturable(g));
   const sc=ST.scan.map(x=>{ const g=x.id?enrich(ST.guias.get(x.id)||{}):null; return {...x,g}; });
-  const cols=[C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>`},{h:"Acuse",k:"acuse",f:g=>fmt(g.acuse)},C.est,C.serv,C.dest,C.fguia];
+  const cols=[C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>${g.grb?`<button class="cp" data-cp="${esc(g.grb)}" title="Copiar GR BBVA" aria-label="Copiar ${esc(g.grb)}">⧉</button>`:""}`},{h:"Acuse",k:"acuse",f:g=>fmt(g.acuse)},C.est,C.serv,C.dest,C.fguia];
   const dig=x=>String(x||"").replace(/\D/g,""), qn=x=>String(x||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
   const q=ST.rq.trim(), qd=dig(q), hasLetters=/[A-Z]/i.test(q);
   const matches=(q.length>=3)?all.filter(g=>!ST.rqList.includes(g._id)&&(hasLetters?(qn(g.grt).includes(qn(q))||qn(g.grb).includes(qn(q))):(dig(g.grt).endsWith(qd)||dig(g.grb).endsWith(qd)))).slice(0,10):[];
@@ -823,7 +835,7 @@ function vRev(){
   const all=listAll().filter(g=>areaSerie(g)!=="INFORMATICA" || g.revision);
   const pend=all.filter(porRevisar), exc=all.filter(g=>g.revision==="EXCLUIDA"), inc=all.filter(g=>g.revision==="INCLUIDA");
   const show=ST.revF==="pend"?pend:ST.revF==="exc"?exc:inc;
-  const cols=[C.sel,C.fguia,C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>`},
+  const cols=[C.sel,C.fguia,C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>${g.grb?`<button class="cp" data-cp="${esc(g.grb)}" title="Copiar GR BBVA" aria-label="Copiar ${esc(g.grb)}">⧉</button>`:""}`},
     {h:"Área según serie",k:"areaS",f:g=>`<b>${esc(g.areaS)}</b>`},{h:"Área en My Gestwin",k:"area",f:g=>t(g.area)},
     {h:"Oficina",k:"dest",f:g=>t(g.dest),cls:"clip"},C.serv,{h:"Contenido",f:g=>t(g.cont),cls:"clip"}];
   return `
@@ -967,11 +979,14 @@ function bindView(){
   const scs=$("#scStart"); if(scs) scs.onclick=startScanCamera;
   const rqs=$("#rqSave"); if(rqs) rqs.onclick=async()=>{ const ids=[...ST.rqList]; rqs.disabled=true;
     try{ await DB.putMany(ids.map(id=>{ const g=ST.guias.get(id); return [id,{...g,acuse:g.acuse||today()}]; })); ST.rqList=[]; toast(`Acuse recibido puesto a ${ids.length} guías.`); render(); }catch(err){ writeErr(err); rqs.disabled=false; } };
+  m.querySelectorAll(".cp").forEach(b=>{ b.onkeydown=e=>e.stopPropagation(); b.onclick=async e=>{ e.stopPropagation(); const v=b.dataset.cp;
+    try{ await navigator.clipboard.writeText(v); }catch(err){ const ta=document.createElement("textarea"); ta.value=v; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(e2){} ta.remove(); }
+    b.textContent="✓"; b.classList.add("ok"); setTimeout(()=>{ b.textContent="⧉"; b.classList.remove("ok"); },1200); toast(`Copiado: ${v}`); }; });
   m.querySelectorAll(".hf").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openHF(b); });
   m.querySelectorAll("[data-hfclear]").forEach(b=>b.onclick=()=>{ ST.colF[ST.view]={}; render(); });
   const sc=$("#scan"); if(sc){ sc.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); const v=sc.value; sc.value=""; procesarScan(v); } }; if(document.activeElement===document.body) sc.focus(); }
   const scc=$("#scanClear"); if(scc) scc.onclick=()=>{ ST.scan=[]; render(); };
-  m.querySelectorAll("th[data-sort]").forEach(th=>th.onclick=()=>{const k=th.dataset.sort; ST.sort={k,d:ST.sort.k===k?-ST.sort.d:-1}; render();});
+  m.querySelectorAll("th[data-sort]").forEach(th=>th.onclick=()=>{const k=th.dataset.sort; ST.sortC=null; ST.sort={k,d:ST.sort.k===k?-ST.sort.d:-1}; render();});
   const more=$("#more"); if(more) more.onclick=()=>{ST.limit+=300;render();};
   const q=$("#q"); if(q) q.oninput=()=>{ST.filt.q=q.value; ST.limit=300; render();};
   m.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ST.filt[b.dataset.f]=b.dataset.v; ST.limit=300; render();});
