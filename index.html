@@ -154,6 +154,12 @@ tr.qopen td{background:var(--accent-soft)}
 .gqd{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--accent-soft);color:var(--accent)}
 .gqr{flex-basis:100%;font-size:12px}
 @media (max-width:860px){.gq{flex:1 1 100%;order:5}}
+.modsw{display:flex;margin:12px 12px 0;border:1px solid rgba(255,255,255,.18);border-radius:8px;overflow:hidden}
+.modsw button{flex:1;border:0;background:none;color:var(--navy-ink);padding:9px 6px;font-family:var(--display);font-weight:800;font-size:14px;cursor:pointer}
+.modsw button[aria-pressed="true"]{background:var(--aqua);color:#04223f}
+.volt{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;color:var(--muted)}
+.volt.on{background:var(--badge);border-color:var(--badge);color:var(--badge-ink)}
+@media (max-width:860px){.modsw{margin:6px 10px}}
 .vz{font-family:var(--mono);font-size:12px;white-space:nowrap}
 .vz-vencido{color:var(--bad);font-weight:700} .vz-hoy{color:var(--warn);font-weight:700;background:var(--warn-bg);padding:2px 6px;border-radius:4px} .vz-ok{color:var(--muted)}
 .corte{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;color:var(--muted)}
@@ -259,12 +265,12 @@ label input,label select,label textarea{color:var(--ink);font-size:14px;width:10
       </svg>
       <div class="client"><b>BBVA</b><span>Seguimiento de guías</span></div>
     </div>
+    <div class="modsw" role="group" aria-label="Módulo"><button data-mod="INF">Informática</button><button data-mod="AF">Activo fijo</button></div>
     <nav id="tabs" aria-label="Secciones">
       <div class="grp">Operación</div>
       <button data-v="pen"><span class="ic">◷</span><span class="lbl">Pendientes</span><span class="n" id="nPen"></span><span class="n red" id="nAl"></span></button>
       <button data-v="acu"><span class="ic">▣</span><span class="lbl">Acuses</span><span class="n" id="nAcu"></span></button>
       <button data-v="ff"><span class="ic">⚠</span><span class="lbl">Falsos fletes</span><span class="n hot" id="nFF"></span></button>
-      <button data-v="rev"><span class="ic">?</span><span class="lbl">Por revisar</span><span class="n hot" id="nRev"></span></button>
       <button data-v="anu"><span class="ic">⊘</span><span class="lbl">Anuladas</span><span class="n" id="nAnu"></span></button>
       <div class="grp">Facturación</div>
       <button data-v="fac"><span class="ic">S/</span><span class="lbl">Por facturar</span><span class="n" id="nFac"></span></button>
@@ -276,7 +282,7 @@ label input,label select,label textarea{color:var(--ink);font-size:14px;width:10
   </aside>
   <div class="content">
     <header class="band">
-      <div><small>Web compartida · Supabase</small><h1 id="viewTitle">Pendientes</h1></div>
+      <div><small><span id="bandMod">Informática</span> · Web compartida</small><h1 id="viewTitle">Pendientes</h1></div>
       <span class="spacer"></span>
       <div class="gq"><input type="search" id="gq" autocomplete="off" placeholder="Buscar cualquier guía (GR Tradel o GR BBVA)…" aria-label="Buscar cualquier guía"><div id="gqRes" class="gqres" hidden></div></div>
       <span class="sync"><span class="dot" id="syncDot"></span><span id="syncTxt">Conectando…</span></span>
@@ -302,6 +308,7 @@ label input,label select,label textarea{color:var(--ink);font-size:14px;width:10
 "use strict";
 // ---------- estado ----------
 const ST = { guias:new Map(), cfg:null, view:"pen", filt:{q:"", serv:"", est:"", alert:false}, sort:{k:"fguia",d:-1}, mes:"", limit:300, ffShow:"pend", loaded:false, canWrite:null, wide:false };
+try{ ST.mod = localStorage.getItem("bbvaMod")==="AF"?"AF":"INF"; }catch(e){ ST.mod="INF"; }
 try{ ST.wide = localStorage.getItem("segWide")==="1"; ST.penWide = localStorage.getItem("penWide")==="1"; ST.facWide = localStorage.getItem("facWide")!=="0"; }catch(e){ ST.facWide=true; }
 const TITLES={seg:"Seguimiento",pen:"Pendientes",acu:"Acuses recibidos",rev:"Por revisar (Economato / Mobiliario)",anu:"Guías anuladas",ff:"Falsos fletes",fac:"Por facturar",imp:"Importar data",cfg:"Ajustes"};
 
@@ -383,6 +390,7 @@ function recepAuto(g){
   return g.serv==="RECOJO"?"SELLO ALMACEN":"SELLO SUBGERENTE";
 }
 function vence(g){
+  if(esAF(g)){ const base=(g.ff&&g.ff.reprog)?g.ff.reprog:g.fguia, L=num(g.lead); return base&&L?sumarDiasHabiles(base,L):null; }
   if(g.plazoExt){ const d=new Date(g.plazoExt); if(!isNaN(d)) return d; }
   if(g.serv==="RECOJO" && g.fret) return sumarDiasHabiles(g.fret, g.terr==="NACIONAL"?(cfg().recNac||5):(cfg().recLocal||3));
   const base=(g.ff&&g.ff.reprog)?g.ff.reprog:g.fguia; if(!base||!g.te) return null;
@@ -394,6 +402,9 @@ function venc(g){
   const v=vence(g); if(!v) return null;
   return {v, st: new Date()>v?"vencido":(iso(v)===today()?"hoy":"ok")};
 }
+function fechaMaxAF(g){ const v=vence(g); return v?iso(v):""; }
+function atrasoAF(g){ if(isFF(g)) return 0; const m=fechaMaxAF(g); if(!m||!g.fent) return ""; return daysBetween(m,g.fent); }
+function cumpleAF(g){ const a=atrasoAF(g); return a===""?"":(a>0?"X":"OK"); }
 function enAlerta(g){ const x=venc(g); return !!x && x.st==="vencido"; }
 const fmtDT=d=>`${pad(d.getDate())}/${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 // ---- área según la serie del GR BBVA ----
@@ -405,8 +416,17 @@ function areaSerie(g){
   if(p==="TC" && MOB_RX.test(norm(g.cont))) return "MOBILIARIO?";
   return "INFORMATICA";
 }
-function visible(g){ if(g.anulada) return false; if(g.revision==="EXCLUIDA") return false; if(g.revision==="INCLUIDA") return true; return areaSerie(g)==="INFORMATICA"; }
-function porRevisar(g){ return !g.anulada && !g.revision && areaSerie(g)!=="INFORMATICA"; }
+// Módulo: lo decide el ALMACÉN de My Gestwin (INFORMATICA → Informática; ECONOMATO / MOBILIARIO → Activo fijo). Se puede cambiar a mano.
+function moduloDe(g){
+  if(g.modulo) return g.modulo;
+  const a=norm(g.area||"");
+  if(a) return /ECONOMATO|MOBILIARIO|ACTIVO/.test(a)?"AF":"INF";
+  const p=String(g.grb||"").toUpperCase().slice(0,2); return (p==="TE"||p==="TA")?"AF":"INF";
+}
+const esAF=g=>moduloDe(g)==="AF";
+const MOD_NOMBRE={INF:"Informática",AF:"Activo fijo"};
+function visible(g){ return !g.anulada && moduloDe(g)===ST.mod; }
+function porRevisar(g){ return false; }
 async function anularGuia(id,motivo){
   const g=ST.guias.get(id); if(!g) return;
   await DB.putMany([[id,{...g,anulada:{fecha:today(),motivo:motivo||"",por:myName||""}}]]);
@@ -423,6 +443,13 @@ function isFF(g){ return !!(g.ff&&g.ff.fecha&&!g.ff.reprog&&!g.fent); }
 function costo(g){
   const peso=num(g.peso), tar=num(g.tar), pri=num(g.pri);
   const rest=Math.max(0,r2(peso-1));
+  if(esAF(g)){
+    const pvol=g.vol==="SI"?r2(peso*num(g.fvol!=null?g.fvol:35)/100):0, sub=r2(rest+pvol);
+    if(isFF(g)){ const lc=g.ti?g.ti==="LC":g.terr!=="NACIONAL"; const cond=g.serv==="ENTREGA"?r2(pri+0.35*rest*tar):(lc?2:8), igv=r2(cond*0.18);
+      return {rest,pvol,sub,fxk:0,cond,flete:cond,igv,total:r2(cond+igv),has:g.serv!=="ENTREGA"||!!(g.tar||g.pri)}; }
+    const fxk=r2(sub*tar), flete=r2(pri+fxk), igv=r2(flete*0.18);
+    return {rest,pvol,sub,fxk,cond:0,flete,igv,total:r2(flete+igv),has:!!(g.tar||g.pri)};
+  }
   if(isFF(g)){ // falso flete: solo se cobra COND. FF
     const lc=g.ti?g.ti==="LC":g.terr!=="NACIONAL";
     const cond=g.serv==="ENTREGA"?r2(pri+0.35*rest*tar):(lc?2:8), igv=r2(cond*0.18);
@@ -442,7 +469,15 @@ function miniAuto(g){
   return T&&T.mini&&T.mini[cod]?"SI":"NO";
 }
 const miniEf=g=>g.miniFijo&&g.mini?g.mini:miniAuto(g);
+function tarifaAF(g){
+  const A=ST.tarifAF; if(!A||!A.cod) return null;
+  const c=String(parseInt(g.co,10)); if(c==="NaN") return null;
+  const src=A.cod[c]; if(!src) return null;
+  const T=ST.tarif, inf=T&&T.tarifas?T.tarifas[COD_ALIAS[c]||c]:null;   // representante: del tarifario de Informática, mismo código
+  return {ti:src.via, pri:src.pri, tar:src.tar, lead:src.lead, fvol:src.fvol, ofc:src.ofc, nombre:src.zona, rep:inf?inf.rep:"", oficina:src.nom, te:""};
+}
 function tarifaDe(g){
+  if(esAF(g)) return tarifaAF(g);
   const T=ST.tarif; if(!T||!T.tarifas) return null;
   const c0=String(parseInt(g.co,10)); if(c0==="NaN") return null;
   const cod=COD_ALIAS[c0]||c0;
@@ -456,7 +491,9 @@ function enrich(g){
   const ti=t.ti||g.ti||"";
   return {...g, ti, terr: ti ? (ti==="LC"?"LOCAL":"NACIONAL") : (g.terr||""), zona:t.nombre||g.zona||"", ofc:t.ofc||g.ofc||"",
     rep:t.rep||g.rep||"", tar:g.tar||(t.tar!=null?String(t.tar):""), pri:g.pri||(t.pri!=null?String(t.pri):""),
-    tarT:t.tar, priT:t.pri, te:t.te||"", enTarifario:!!t.ti, areaS:areaSerie(g), corte:g.corte||"2", consignado:g.consignado||"BBVA", mini:miniEf(g), tipo:g.tipo||"REG"};
+    tarT:t.tar, priT:t.pri, te:t.te||"", enTarifario:!!t.ti, areaS:areaSerie(g), corte:g.corte||"2", consignado:g.consignado||"BBVA", mini:esAF(g)?"NO":miniEf(g), tipo:g.tipo||"REG",
+    mod:moduloDe(g), lead:t.lead||g.lead||"", fvol:t.fvol!=null?t.fvol:35, oficinaT:t.oficina||"", vol:g.vol||"NO",
+    usuario:g.usuario||(esAF(g)?(String(g.grb||"").toUpperCase().startsWith("TE01")?"GIANFRANCO SAENZ":"VICTOR CHUMPITAZ"):"")};
 }
 function facturable(g){ const e=estado(g); return e==="ENTREGADO" || (e==="FALSO FLETE" && g.ff && g.ff.facturar); }
 function fechaBase(g){ return g.fent || (g.ff && g.ff.fecha) || ""; }
@@ -491,7 +528,8 @@ function render(){
   $("#nFF").textContent=all.filter(g=>estado(g)==="FALSO FLETE").length||"";
   $("#nFac").textContent=all.filter(g=>facturable(g)&&!g.pre).length||"";
   $("#nAcu").textContent=all.filter(g=>g.acuse&&enPendientes(g)).length||"";
-  $("#nRev").textContent=[...ST.guias.values()].filter(porRevisar).length||"";
+  document.querySelectorAll("[data-mod]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mod===ST.mod));
+  $("#bandMod").textContent=MOD_NOMBRE[ST.mod];
   $("#nAnu").textContent=[...ST.guias.values()].filter(g=>g.anulada).length||"";
   document.querySelectorAll("#tabs button").forEach(b=>{ if(b.dataset.v===ST.view) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current"); });
   $("#viewTitle").textContent=TITLES[ST.view];
@@ -606,7 +644,32 @@ const money0=n=>n?money(n):"";
 const colH=(arr,h)=>arr.find(c=>c.h===h);
 const cRet={h:"F. retiro / FF",k:"fret",v:g=>g.ff&&g.ff.fecha?"FF "+fmt(g.ff.fecha):g.fret?"Retiro "+fmt(g.fret):"",f:g=>g.ff&&g.ff.fecha?`<span class="pill p-FALSO">FF</span> ${fmt(g.ff.fecha)}`:g.fret?`Retiro ${fmt(g.fret)}`:""};
 // Pendientes · vista completa (tu Excel, sin precios)
+const cMT=[{h:"MT",k:"mani",f:g=>g.manif?`<span class="mono">${t(g.manif.num)}</span>`:""},{h:"Aerolínea o agencia",f:g=>g.manif?t(g.manif.agencia):"",cls:"clip"},
+  {h:"F. despacho",f:g=>g.manif?t(String(g.manif.fecha||"").split(" ")[0]):""},{h:"Orden de servicio",f:g=>g.manif?`<span class="mono">${t(g.manif.os)}</span>`:""}];
+const cAF={
+  code:{h:"CODE",k:"co",f:g=>t(g.co)}, ofi:{h:"Oficina",k:"dest",f:g=>t(g.oficinaT||g.dest),cls:"clip"},
+  usu:{h:"Usuario",k:"usuario",f:g=>t(g.usuario)}, cons:{h:"Consignado",k:"rep",f:g=>t(g.rep)},
+  lead:{h:"Lead time",k:"lead",num:1,f:g=>t(g.lead)}, fmax:{h:"Fecha máx. de entrega",k:"fmax",v:g=>fmt(fechaMaxAF(g)),f:g=>fmt(fechaMaxAF(g))},
+  ret:{h:"F. retiro",k:"fret",f:g=>fmt(g.fret)}, atr:{h:"Atraso",num:1,f:g=>{const a=atrasoAF(g);return a===""?"":String(a);}},
+  cum:{h:"Cumple",v:g=>cumpleAF(g),f:g=>{const c=cumpleAF(g);return c==="X"?'<b style="color:var(--bad)">X</b>':c==="OK"?'<b style="color:var(--ok)">OK</b>':"";}},
+  terr:{h:"TERR",k:"ti",f:g=>t(g.ti)},
+  vol:{h:"VOL",k:"vol",f:g=>`<button class="volt ${g.vol==="SI"?"on":""}" data-vol="${esc(g._id)}" title="Peso volumen (${esc(g.fvol)}%)">${g.vol==="SI"?"SI":"NO"}</button>`},
+};
+function penColsAF(){
+  return [colH(S,"Acuse recibido"),C.vence,...cMT,C.fguia,cAF.code,cAF.ofi,C.grt,colH(S,"GR BBVA"),colH(S,"Bulto"),colH(S,"Peso kg"),cAF.usu,cAF.cons,{h:"OF",k:"ofc",f:g=>t(g.ofc)},{h:"Zona",k:"zona",f:g=>t(g.zona)},
+    C.serv,{h:"Contenido",f:g=>t(g.cont),cls:"clip"},cAF.lead,cAF.fmax,C.est,cAF.ret,{...colH(S,"F. entrega"),h:"Fecha"},{h:"Recepción",k:"recepcion",f:g=>t(g.recepcion),cls:"clip"},cAF.atr,cAF.cum,cAF.terr];
+}
+function facColsAF(){
+  const cst=(h,fn)=>({h,num:1,f:g=>{const c=costo(g);return c.has?fn(c,g):"";}});
+  return [C.sel,C.pre,colH(S,"Acuse recibido"),...cMT,C.fguia,cAF.code,cAF.ofi,C.grt,colH(S,"GR BBVA"),colH(S,"Bulto"),colH(S,"Peso kg"),cAF.usu,cAF.cons,{h:"OF",k:"ofc",f:g=>t(g.ofc)},{h:"Zona",k:"zona",f:g=>t(g.zona)},
+    C.serv,{h:"Contenido",f:g=>t(g.cont),cls:"clip"},cAF.vol,cAF.lead,cAF.fmax,C.est,cAF.ret,
+    {h:"Fecha",k:"fent",v:g=>isFF(g)?"FF":fmt(g.fent),f:g=>isFF(g)?'<span class="pill p-FALSO">FF</span>':fmt(g.fent)},{h:"Recepción",k:"recepcion",f:g=>t(g.recepcion),cls:"clip"},cAF.atr,cAF.cum,cAF.terr,
+    {h:"Tar x kg",num:1,f:g=>money0(num(g.tar))},{h:"1er kilo",num:1,f:g=>money0(num(g.pri))},cst("Peso rest.",c=>c.rest.toFixed(2)),cst("Peso vol",c=>c.pvol.toFixed(2)),cst("Sub total peso",c=>c.sub.toFixed(2)),
+    {h:"Cond. FF",num:1,f:g=>money0(costo(g).cond)},{h:"Flete total",num:1,f:g=>{const c=costo(g);return c.has?money(c.flete):'<span class="muted">sin tarifa</span>';}},cst("IGV 18%",c=>money(c.igv)),C.total,
+    {h:"Factura",k:"factura",f:g=>t(g.factura)},{h:"Fecha fac.",f:g=>fmt(g.ffac)}];
+}
 function penCols(){
+  if(ST.mod==="AF") return penColsAF();
   return [colH(S,"Acuse recibido"),C.vence,C.fguia,colH(S,"COD"),colH(S,"Origen → Destino"),C.grt,colH(S,"GR BBVA"),colH(S,"Bulto"),colH(S,"Peso kg"),colH(S,"Mini"),colH(S,"Tipo"),colH(S,"Consignado"),
     {h:"OF",k:"ofc",f:g=>t(g.ofc)},{h:"Zona",k:"zona",f:g=>t(g.zona)},C.serv,{h:"Contenido",f:g=>t(g.cont),cls:"clip"},C.est,colH(S,"F. entrega"),{h:"Recepción",k:"recepcion",f:g=>t(g.recepcion),cls:"clip"},
     {h:"TERR",k:"ti",f:g=>t(g.ti)},{h:"Territorio",k:"terr",f:g=>t(g.terr)},{h:"Representante",k:"rep",f:g=>t(g.rep),cls:"clip"},C.corte,
@@ -615,6 +678,7 @@ function penCols(){
 }
 // Por facturar (tu Excel de prefactura)
 function facColsExcel(){
+  if(ST.mod==="AF") return facColsAF();
   const cst=(h,fn)=>({h,num:1,f:g=>{const c=costo(g);return c.has?fn(c,g):"";}});
   return [C.sel,C.pre,colH(S,"Acuse recibido"),C.fguia,colH(S,"COD"),{h:"Oficina",k:"dest",f:g=>t(g.dest),cls:"clip"},C.grt,colH(S,"GR BBVA"),colH(S,"Bulto"),colH(S,"Peso kg"),colH(S,"Mini"),colH(S,"Tipo"),colH(S,"Consignado"),
     {h:"OF",k:"ofc",f:g=>t(g.ofc)},{h:"Zona",k:"zona",f:g=>t(g.zona)},C.serv,{h:"Contenido",f:g=>t(g.cont),cls:"clip"},C.est,
@@ -709,7 +773,7 @@ function quickRow(g,n){
     <span class="qd" id="qRet" ${modo==="ret"?"":"hidden"}>Se guarda como: <b>SE RECOGIÓ</b></span>
     <button class="btn pri" id="qSave" data-modo="${modo}">Guardar</button>
     <span class="spacer"></span>
-    <button class="btn sm" id="qFF">Falso flete</button><button class="btn sm" id="qAnu">Anular</button><button class="btn sm" id="qMore">Ver detalle</button>
+    <button class="btn sm" id="qFF">Falso flete</button><button class="btn sm" id="qAnu">Anular</button><button class="btn sm" id="qMod">Pasar a ${esAF(g)?"Informática":"Activo fijo"}</button><button class="btn sm" id="qMore">Ver detalle</button>
     <div id="qAnuBox" class="bar" hidden style="width:100%"><input id="qAnuMot" placeholder="Motivo de la anulación" style="flex:1"><button class="btn sm" id="qAnuSave" style="color:var(--bad)">Anular guía</button></div>
     <div id="qFFBox" class="bar" hidden style="width:100%"><input id="qMot" placeholder="Motivo del falso flete" style="flex:1"><button class="btn sm" id="qFFSave">Guardar falso flete</button></div>
   </div></td></tr>`;
@@ -749,7 +813,7 @@ async function aplicarScan(item){
   if(!g){ item.status="error"; item.error="No está en el seguimiento. ¿Ya importaste las guías de ese día?"; scanFeedback("error"); return; }
   item.guia=g.grt;
   if(g.anulada){ item.status="error"; item.error=`Está anulada (${fmt(g.anulada.fecha)})`; scanFeedback("error"); return; }
-  if(!visible(g)){ item.status="error"; item.error="Está en Por revisar (Economato / Mobiliario)"; scanFeedback("error"); return; }
+
   if(SCAN.items.some(x=>x!==item&&x.guia===g.grt&&x.status==="ok")){ item.status="error"; item.error="Duplicada: ya la escaneaste"; scanFeedback("dup"); return; }
   item.ya=g.acuse||"";
   if(!g.acuse){ try{ await DB.patch(g._id,{acuse:today()}); }catch(err){ item.status="error"; item.error="No se pudo guardar el acuse"; scanFeedback("error"); return; } }
@@ -887,12 +951,11 @@ function vFF(){
 }
 
 function dondeEsta(g){
-  if(g.anulada) return ["Anuladas","anu"];
-  if(g.revision==="EXCLUIDA") return ["Excluida (Por revisar)","rev"];
-  if(porRevisar(g)) return ["Por revisar","rev"];
-  if(facturable(g)) return [g.pre?`Por facturar · PRE ${g.pre}`:"Por facturar","fac"];
-  if(estado(g)==="FALSO FLETE") return ["Falsos fletes","ff"];
-  return ["Pendientes","pen"];
+  const m=MOD_NOMBRE[moduloDe(g)]+" · ";
+  if(g.anulada) return [m+"Anuladas","anu"];
+  if(facturable(g)) return [m+(g.pre?`Por facturar · PRE ${g.pre}`:"Por facturar"),"fac"];
+  if(estado(g)==="FALSO FLETE") return [m+"Falsos fletes","ff"];
+  return [m+"Pendientes","pen"];
 }
 function buscarGeneral(q){
   const qn=x=>String(x||"").toUpperCase().replace(/[^A-Z0-9]/g,""), dig=x=>String(x||"").replace(/\D/g,"");
@@ -908,11 +971,11 @@ function pintarGQ(){
     return `<button class="gqi" data-gq="${esc(g._id)}"><b class="mono">${esc(g.grt)}</b><span class="mono muted">${esc(g.grb)}</span>${pill(estado(g))}<span class="gqd">${esc(donde)}</span><span class="muted gqr">${esc(r.o||"")} → ${esc(r.d||"")}</span></button>`; }).join("")
     :`<p class="note" style="padding:10px 12px">No hay ninguna guía con "${esc(q)}".</p>`;
   box.hidden=false;
-  box.querySelectorAll("[data-gq]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); box.hidden=true; $("#gq").value=""; openDrawer(b.dataset.gq); });
+  box.querySelectorAll("[data-gq]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); box.hidden=true; $("#gq").value=""; const g=ST.guias.get(b.dataset.gq); if(g&&moduloDe(g)!==ST.mod){ ST.mod=moduloDe(g); try{localStorage.setItem("bbvaMod",ST.mod);}catch(e2){} render(); } openDrawer(b.dataset.gq); });
 }
 
 function vAnu(){
-  const rows=listAll().filter(g=>g.anulada);
+  const rows=listAll().filter(g=>g.anulada&&moduloDe(g)===ST.mod);
   const cols=[{h:"",nof:1,f:g=>`<button class="btn sm" data-restaurar="${esc(g._id)}">Restaurar</button>`},{h:"F. anulación",k:"fanu",v:g=>fmt(g.anulada.fecha),f:g=>fmt(g.anulada.fecha)},{h:"Motivo",f:g=>t(g.anulada.motivo)||'<span class="muted">—</span>',cls:"clip"},
     {h:"Anulada por",f:g=>t(g.anulada.por)},C.fguia,C.serv,C.dest,C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>`},C.est];
   return `<div class="search"><p class="note">Las guías anuladas no aparecen en Pendientes, Acuses ni Por facturar, y no se vuelven a crear si las importas de nuevo. Si anulaste una por error, dale <b>Restaurar</b>.</p></div>
@@ -920,7 +983,7 @@ function vAnu(){
 }
 
 function vRev(){
-  const all=listAll().filter(g=>!g.anulada&&(areaSerie(g)!=="INFORMATICA" || g.revision));
+  const all=[];
   const pend=all.filter(porRevisar), exc=all.filter(g=>g.revision==="EXCLUIDA"), inc=all.filter(g=>g.revision==="INCLUIDA");
   const show=ST.revF==="pend"?pend:ST.revF==="exc"?exc:inc;
   const cols=[C.sel,C.fguia,C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>${g.grb?`<button class="cp" data-cp="${esc(g.grb)}" title="Copiar GR BBVA" aria-label="Copiar ${esc(g.grb)}">⧉</button>`:""}`},
@@ -1008,6 +1071,7 @@ function vImp(){
     <div class="drop" id="dropExt">Arrastra aquí el archivo del Extranet o <label style="display:inline;color:var(--accent);cursor:pointer;font-size:14px">elígelo<input type="file" id="fileExt" accept=".xlsx,.xls" hidden></label></div>
     <div id="extRes"></div></div></div>
   <div class="card"><h2>3 · Tarifario (solo cuando cambie)</h2><div class="sec">
+    <p class="note"><b>Activo fijo:</b> sube el <b>MAESTRO_CECO</b> (tarifa, OF, zona, vía y lead time en días por código). ${ST.tarifAF?`Actual: <b>${esc(ST.tarifAF.archivo||"")}</b>, cargado el ${fmt(ST.tarifAF.actualizado)}.`:`<b>Todavía no hay tarifario de Activo fijo.</b>`} <b>Informática:</b> el tarifario con hojas TARIFAS y MINI. Se reconoce solo.</p>
     <p class="note">Sube el Excel del tarifario (hojas <b>TARIFAS</b> y <b>MINI</b>). Con el <b>COD</b> de oficina, el <b>Tipo</b> (REG/EXP) y si es <b>Mini</b>, cada guía toma sola su TI, territorio, zona, representante, 1er kilo, tarifa por kg y horas de lead time (TE-REG / TE-EXP). ${ST.tarif?`Tarifario actual: <b>${esc(ST.tarif.archivo||"")}</b>, cargado el ${fmt(ST.tarif.actualizado)}.${Object.values(ST.tarif.tarifas||{}).some(x=>x.teR)?"":` <b style="color:var(--bad)">Vuelve a subirlo para que tome las horas de lead time.</b>`}`:`<b>Todavía no hay tarifario cargado.</b>`}</p>
     <div class="drop" id="dropTar">Arrastra aquí el tarifario o <label style="display:inline;color:var(--accent);cursor:pointer;font-size:14px">elígelo<input type="file" id="fileTar" accept=".xlsx,.xls" hidden></label></div>
     <div id="tarRes"></div></div></div>
@@ -1061,6 +1125,7 @@ function bindView(){
     $("#qFFSave").onclick=async()=>{ const d=$("#qDate").value||today();
       try{ await DB.patch(id,{ff:{fecha:d,motivo:$("#qMot").value.trim(),reprog:"",facturar:false}}); ST.openQ=null; toast(`${g.grt}: falso flete registrado.`); render(); }catch(err){ writeErr(err); } };
     $("#qMore").onclick=()=>openDrawer(id);
+    $("#qMod").onclick=async()=>{ const nuevo=esAF(g)?"INF":"AF"; try{ await DB.patch(id,{modulo:nuevo}); ST.openQ=null; toast(`${g.grt} pasó a ${MOD_NOMBRE[nuevo]}.`); render(); }catch(err){ writeErr(err); } };
     $("#qAnu").onclick=()=>{ $("#qAnuBox").hidden=false; $("#qAnuMot").focus(); };
     $("#qAnuSave").onclick=async()=>{ try{ await anularGuia(id,$("#qAnuMot").value.trim()); ST.openQ=null; render(); }catch(err){ writeErr(err); } };
   }
@@ -1075,6 +1140,8 @@ function bindView(){
   const rqs=$("#rqSave"); if(rqs) rqs.onclick=async()=>{ const ids=[...ST.rqList]; rqs.disabled=true;
     try{ await DB.putMany(ids.map(id=>{ const g=ST.guias.get(id); return [id,{...g,acuse:g.acuse||today()}]; })); ST.rqList=[]; toast(`Acuse recibido puesto a ${ids.length} guías.`); render(); }catch(err){ writeErr(err); rqs.disabled=false; } };
   m.querySelectorAll("[data-restaurar]").forEach(b=>b.onclick=async e=>{ e.stopPropagation(); b.disabled=true; try{ await restaurarGuia(b.dataset.restaurar); }catch(err){ writeErr(err); b.disabled=false; } });
+  m.querySelectorAll("[data-vol]").forEach(b=>{ b.onkeydown=e=>e.stopPropagation(); b.onclick=async e=>{ e.stopPropagation(); const id=b.dataset.vol, g=ST.guias.get(id);
+    try{ await DB.patch(id,{vol:g.vol==="SI"?"NO":"SI"}); }catch(err){ writeErr(err); } }; });
   m.querySelectorAll(".cp").forEach(b=>{ b.onkeydown=e=>e.stopPropagation(); b.onclick=async e=>{ e.stopPropagation(); const v=b.dataset.cp;
     try{ await navigator.clipboard.writeText(v); }catch(err){ const ta=document.createElement("textarea"); ta.value=v; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(e2){} ta.remove(); }
     b.textContent="✓"; b.classList.add("ok"); setTimeout(()=>{ b.textContent="⧉"; b.classList.remove("ok"); },1200); toast(`Copiado: ${v}`); }; });
@@ -1178,6 +1245,7 @@ function renderDrawer(){
         ${inp("grt","GR Tradel *")}${inp("grb","GR BBVA")}
         ${inp("co","COD oficina")}${inp("consignado","Consignado")}
         <label>Mini<select id="f_mini"><option value="" ${!g.miniFijo?"selected":""}>Automático (${miniAuto(g)})</option><option ${g.miniFijo&&g.mini==="SI"?"selected":""}>SI</option><option ${g.miniFijo&&g.mini==="NO"?"selected":""}>NO</option></select></label>
+        ${esAF(g)||isNew&&ST.mod==="AF"?`<label>VOL (peso volumen)<select id="f_vol">${opt(["NO","SI"],g.vol||"NO")}</select></label><label>Usuario<input id="f_usuario" value="${esc(g.usuario||"")}" placeholder="${esc(ge.usuario||"")}"></label>`:""}
         <label>Tipo<select id="f_tipo">${opt(["REG","EXP"],g.tipo||"REG")}</select></label>
         <label>Corte<select id="f_corte"><option value="2" ${g.corte!=="1"?"selected":""}>2° corte · 15:00</option><option value="1" ${g.corte==="1"?"selected":""}>1° corte · 11:00</option></select></label>
         <div><span class="muted" style="font-size:12px">Vence (lead time)</span><div class="ro">${(()=>{const x=venc(ge);return x?`${fmtDT(x.v)}${x.st==="vencido"?" · vencida":""}`:"—";})()}</div></div>
@@ -1220,7 +1288,7 @@ function renderDrawer(){
       </fieldset>
       <p class="note">${ultima}</p>
     </div>
-    <div class="df"><button class="btn pri" id="dSave">Guardar</button>${isNew?"":`<span class="spacer"></span>${g.anulada?`<button class="btn" id="dRest">Restaurar guía</button>`:`<button class="btn" id="dAnu">Anular guía</button>`}<button class="btn" id="dDel">Eliminar guía</button>`}<div id="delBox" class="full" style="width:100%"></div></div>
+    <div class="df"><button class="btn pri" id="dSave">Guardar</button>${isNew?"":`<span class="spacer"></span><button class="btn" id="dMod">Pasar a ${esAF(g)?"Informática":"Activo fijo"}</button>${g.anulada?`<button class="btn" id="dRest">Restaurar guía</button>`:`<button class="btn" id="dAnu">Anular guía</button>`}<button class="btn" id="dDel">Eliminar guía</button>`}<div id="delBox" class="full" style="width:100%"></div></div>
   </aside>`;
   const upd=()=>{ const t={...ge,peso:$("#f_peso").value,tar:$("#f_tar").value||(ge.tarT??""),pri:$("#f_pri").value||(ge.priT??"")}; const k=costo(t);
     $("#costs").innerHTML=`<div>Peso rest.<b>${k.rest.toFixed(2)}</b></div><div>Flete x kilo<b>${money(k.fxk)}</b></div><div>Cond. FF<b>${money(k.cond)}</b></div><div>Flete total<b>${money(k.flete)}</b></div><div>Total c/IGV<b>${money(k.total)}</b></div>`; };
@@ -1230,6 +1298,7 @@ function renderDrawer(){
   const qf=$("#qff"); if(qf) qf.onclick=()=>{ $("#ffBox").hidden=false; $("#ff_fecha").value=today(); $("#ff_motivo").focus(); qf.remove(); };
   const fd=$("#ffDel"); if(fd) fd.onclick=()=>{ $("#ff_fecha").value=""; $("#ff_motivo").value=""; $("#ff_reprog").value=""; $("#ff_facturar").value=""; $("#ffBox").hidden=true; toast("Falso flete quitado. Pulsa Guardar."); };
   document.querySelectorAll("[data-q]").forEach(b=>b.onclick=async()=>{ await writeGuia(openId,{...g,[b.dataset.q]:today(),...(b.dataset.q==="fent"&&!g.recepcion&&recepAuto(g)?{recepcion:recepAuto(g)}:{}),...(b.dataset.q==="fret"?{retiroNota:"SE RECOGIÓ"}:{})}); toast(b.dataset.q==="fent"?"Marcada como entregada.":"Marcada como retirada."); });
+  const dm=$("#dMod"); if(dm) dm.onclick=async()=>{ const nuevo=esAF(g)?"INF":"AF"; try{ await DB.patch(openId,{modulo:nuevo}); toast(`${g.grt} pasó a ${MOD_NOMBRE[nuevo]}.`); closeDrawer(); }catch(err){ writeErr(err); } };
   const da=$("#dAnu"); if(da) da.onclick=()=>{ $("#delBox").innerHTML=`<div class="bar" style="margin-top:6px"><input id="anuMot" placeholder="Motivo de la anulación" style="flex:1 1 220px"><button class="btn sm" id="anuYes" style="color:var(--bad)">Anular ${esc(g.grt)}</button><button class="btn sm" id="anuNo">Cancelar</button></div>`;
     $("#anuMot").focus(); $("#anuNo").onclick=()=>$("#delBox").innerHTML="";
     $("#anuYes").onclick=async()=>{ try{ await anularGuia(openId,$("#anuMot").value.trim()); closeDrawer(); }catch(err){ writeErr(err); } }; };
@@ -1249,6 +1318,8 @@ async function saveDrawer(isNew,g){
   const data={...(isNew?{}:g)}; delete data._id;
   ["serv","fguia","grb","co","consignado","mini","tipo","orig","dest","dir","area","bultos","peso","cont","fret","fent","acuse","recepcion","obs","tar","pri","corte","pre","factura","ffac"].forEach(k=>data[k]=v(k));
   data.grt=grt; data.miniFijo=!!data.mini;
+  if($("#f_vol")) data.vol=$("#f_vol").value; if($("#f_usuario")) data.usuario=$("#f_usuario").value.trim();
+  if(isNew) data.modulo=ST.mod;
   const ffF=$("#ff_fecha").value;
   if(ffF) data.ff={fecha:ffF,motivo:$("#ff_motivo").value.trim(),reprog:$("#ff_reprog").value,facturar:$("#ff_facturar").value==="1"};
   else delete data.ff;
@@ -1268,8 +1339,15 @@ async function saveCfg(next,msg){
 }
 
 // ---------- facturar ----------
+function filaAF(g){
+  const c=costo(g), n=x=>x===""||x==null?"":String(x).replace(".",","), mf=g.manif||{};
+  return [g.pre,fmt(g.acuse),mf.num||"",mf.agencia||"",String(mf.fecha||"").split(" ")[0],mf.os||"",fmt(g.fguia),g.co,g.oficinaT||g.dest,g.grt,g.grb,n(g.bultos),n(g.peso),g.usuario,g.rep,g.ofc,g.zona,g.serv,(g.cont||"").replace(/\s+/g," "),
+    g.vol,g.lead,fmt(fechaMaxAF(g)),estado(g),fmt(g.fret),isFF(g)?"FF":fmt(g.fent),g.recepcion,atrasoAF(g),cumpleAF(g),g.ti,n(g.tar),n(g.pri),n(c.rest),n(c.pvol),n(c.sub),n(c.cond),n(c.flete),n(c.igv),n(c.total),g.factura,fmt(g.ffac)];
+}
+const H_AF=["PRE","ACUSE RECIBIDO","MT","AEROLINIA O AGENCIA","FECHA DE DESPACHO","ORDEN DE SERVICIO","FECHA DE LA GUÍA","CODE","OFICINA","GR TRADEL","GR BBVA","BULT.","PESO KG.","USUARIO","CONSIGNADO","OF","ZONA","SERVICIO","CONTENIDO","VOL","LEAD TIME","FECHA MAX DE ENTREGA","ESTADO","FECHA DE RETIRO","FECHA","RECEPCION","ATRASO","CUMPLE","TERR","TAR x Kg","1er kilo","PESO REST.","PESO VOL","SUB TOTAL PESO","COND FF","FLETE TOTAL","IGV 18%","TOTAL S/.","FACTURA","FECHA FAC"];
 function facRowsTSV(){
   const rows=ST.facVisible||facRows();
+  if(ST.mod==="AF") return [H_AF.join("\t"),...rows.map(g=>filaAF(g).map(x=>String(x??"").replace(/\t/g," ")).join("\t"))].join("\n");
   const h=["PRE","ACUSE RECIBIDO","FECHA DE GUIA","COD","OFICINA","GR TRADEL","GR BBVA","BULTO","PESO KG.","MINI","TIPO","CONSIGNADO","OF","ZONA","SERVICIO","CONTENIDO","ESTADO","FECHA DE ENTREGA","RECEPCION","TERR","TERRITORIO","TAR x Kg","1er kilo","PESO REST.","FLETE Precio x kilo","COND. FF","FLETE TOTAL","IGV 18%","TOTAL S/.","FACTURA","FECHA FAC"];
   const n=x=>x===""||x==null?"":String(x).replace(".",",");
   const lines=rows.map(g=>{const c=costo(g);return [g.pre,fmt(g.acuse),fmt(g.fguia),g.co,g.dest,g.grt,g.grb,n(g.bultos),n(g.peso),g.mini,g.tipo,g.consignado,g.ofc,g.zona,g.serv,(g.cont||"").replace(/\s+/g," "),
@@ -1441,9 +1519,32 @@ function parseTarifario(wb){
   }
   return out;
 }
+function parseMaestroAF(wb){
+  for(const n of wb.SheetNames){
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:""});
+    const hi=rows.findIndex(r=>{ const H=(r||[]).map(norm); return H.includes("CECO")&&H.some(h=>h.startsWith("LEAD TIME DIAS")); }); if(hi<0) continue;
+    const H=rows[hi].map(norm), c=x=>{ const i=H.indexOf(x); return i>=0?i:H.findIndex(h=>h.startsWith(x)); };
+    const ix={cod:c("CECO"),nom:c("NOMBRE PREFACTURA"),of:c("OF"),zona:c("ZONA"),via:c("VIA"),terr:c("TERRITORIO"),lead:c("LEAD TIME DIAS"),pri:c("TARIFA 1ER KILO"),tar:c("TARIFA KILO ADICIONAL"),fvol:c("FACTOR PESO VOLUMEN")};
+    const out={cod:{}};
+    for(const r of rows.slice(hi+1)){ const cod=parseInt(r[ix.cod],10); if(isNaN(cod)||out.cod[cod]) continue; const v=k=>ix[k]>=0?r[ix[k]]:"";
+      out.cod[cod]={nom:fixMoji(v("nom")).toUpperCase(),ofc:fixMoji(v("of")),zona:fixMoji(v("zona")),via:norm(v("via")),terr:fixMoji(v("terr")),lead:num(v("lead")),pri:num(v("pri")),tar:num(v("tar")),fvol:num(v("fvol"))||35}; }
+    return out;
+  }
+  return null;
+}
 async function importTarifario(file){
   const out=$("#tarRes"); out.innerHTML=`<p class="note">Leyendo ${esc(file.name)}…</p>`;
   let wb; try{ wb=await readBook(file); }catch(e){ out.innerHTML=`<p class="note" style="color:var(--bad)">No se pudo leer el archivo.</p>`; return; }
+  const A=parseMaestroAF(wb);
+  if(A&&Object.keys(A.cod).length){
+    const nA=Object.keys(A.cod).length, afG=[...ST.guias.values()].filter(g=>!g.anulada&&esAF(g));
+    const prev=ST.tarifAF; ST.tarifAF=A; const con=afG.filter(g=>tarifaAF(g)).length; ST.tarifAF=prev;
+    out.innerHTML=`<div class="grid-sum"><div class="tile"><b>${nA}</b><span>Códigos en el MAESTRO de Activo fijo</span></div><div class="tile or"><b>${con} de ${afG.length}</b><span>Guías de Activo fijo que encuentran su tarifa</span></div></div>
+      <div class="bar"><button class="btn pri" id="applyTar">Guardar tarifario de Activo fijo</button></div>`;
+    $("#applyTar").onclick=async()=>{ $("#applyTar").disabled=true;
+      try{ await DB.putCfg({...A,actualizado:today(),archivo:file.name},"tarifario_af"); toast("Tarifario de Activo fijo guardado."); out.innerHTML=`<p class="note">Tarifario de Activo fijo guardado (${nA} códigos con tarifa y lead time en días).</p>`; }catch(err){ writeErr(err); } };
+    return;
+  }
   const T=parseTarifario(wb), nT=Object.keys(T.tarifas).length, nM=Object.keys(T.mini).length;
   if(!nT){ out.innerHTML=`<p class="note" style="color:var(--bad)">No encontré la hoja TARIFAS con la columna COD.</p>`; return; }
   const antes=list().filter(g=>g.enTarifario).length;
@@ -1518,12 +1619,12 @@ async function importSeguimiento(file){
     if(Object.keys(patch).length) completar.push([id,patch]); else iguales++;
   }
   const nombre={gestwin:"My Gestwin",ordenado:"Excel ordenado",seguimiento:"seguimiento anterior"}[formato];
-  const aRevisar=nuevos.filter(([id,g])=>areaSerie(g)!=="INFORMATICA").length;
+  const nAF=nuevos.filter(([id,g])=>moduloDe(g)==="AF").length, nINF=nuevos.length-nAF;
   out.innerHTML=`<p class="note">Formato reconocido: <b>${nombre}</b>.</p><div class="grid-sum">
     <div class="tile"><b>${nuevos.length}</b><span>Guías nuevas</span></div>
     <div class="tile aq"><b>${completar.length}</b><span>Ya estaban: se completan datos vacíos</span></div>
     <div class="tile or"><b>${iguales}</b><span>Ya estaban completas: no se tocan</span></div>
-    ${aRevisar?`<div class="tile red"><b>${aRevisar}</b><span>De las nuevas van a <b>Por revisar</b> (Economato / Mobiliario)</span></div>`:""}</div>
+    ${nuevos.length?`<div class="tile"><b>${nINF} · ${nAF}</b><span>Nuevas para Informática · Activo fijo (según el almacén de My Gestwin)</span></div>`:""}</div>
     <div class="bar"><button class="btn pri" id="applySeg" ${nuevos.length+completar.length?"":"disabled"}>Importar</button><div class="prog" style="flex:1" hidden id="segProg"><i></i></div></div>`;
   $("#applySeg").onclick=async()=>{
     $("#applySeg").disabled=true; const p=$("#segProg"); p.hidden=false; let i=0; const tot=nuevos.length+completar.length;
@@ -1538,18 +1639,20 @@ async function importSeguimiento(file){
 
 // ---------- exportar ----------
 async function exportXlsx(){
+  if(ST.mod==="AF"){ const aoa=[H_AF,...sorted(list()).map(filaAF)]; const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),"SEGUIMIENTO"); XLSX.writeFile(wb,`seguimiento_bbva_activo_fijo_${today()}.xlsx`); return; }
   const rows=sorted(list()).map(g=>{const c=costo(g);return {"FECHA GUIA":fmt(g.fguia),"SERVICIO":g.serv,"ESTADO":estado(g),"CO":g.co,"ORIGEN":ruta(g).o,"DESTINO":ruta(g).d,"ACUSE RECIBIDO":fmt(g.acuse),"MINI":g.mini,"TIPO":g.tipo,"CONSIGNADO":g.consignado,"OF":g.ofc,"REPRESENTANTE":g.rep,"OFICINA DESTINO":g.dest,"DIRECCION":g.dir,"AREA":g.area,"ZONA":g.zona,"TI":g.ti,"TERRITORIO":g.terr,
     "GR TRADEL":g.grt,"GR BBVA":g.grb,"BULTOS":num(g.bultos)||"","PESO KG":num(g.peso)||"","CONTENIDO":g.cont,"N° MANIFIESTO":g.manif?g.manif.num:"","FECHA DESPACHO":g.manif?g.manif.fecha:"","AGENCIA":g.manif?g.manif.agencia:"","N° O/S":g.manif?g.manif.os:"",
     "F. RETIRO":fmt(g.fret),"F. ENTREGA":fmt(g.fent),"OBSERVACION":g.obs,"F. FALSO FLETE":fmt(g.ff&&g.ff.fecha),"MOTIVO FF":g.ff?g.ff.motivo:"","F. REPROGRAMACION":fmt(g.ff&&g.ff.reprog),"FACTURAR FF":g.ff?(g.ff.facturar?"SI":"NO"):"",
     "TAR x KG":num(g.tar)||"","1er KILO":num(g.pri)||"","PESO REST":c.rest,"FLETE x KILO":c.fxk,"COND FF":c.cond,"FLETE TOTAL":c.flete,"IGV":c.igv,"TOTAL":c.total,"PRE":g.pre,"CORTE":g.corte==="1"?"1°":"2°","VENCE":(()=>{const x=venc(g);return x?fmtDT(x.v):"";})(),"AREA SERIE":g.areaS,"N° FACTURA":g.factura,"FECHA FAC":fmt(g.ffac),"RECEPCION":g.recepcion};});
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),"SEGUIMIENTO");
-  XLSX.writeFile(wb,`seguimiento_bbva_${today()}.xlsx`);
+  XLSX.writeFile(wb,`seguimiento_bbva_informatica_${today()}.xlsx`);
 }
 
 // ---------- arranque ----------
 $("#tabs").onclick=e=>{ const b=e.target.closest("button[data-v]"); if(!b) return; ST.view=b.dataset.v; ST.limit=300; render(); };
 $("#btnNew").onclick=()=>openDrawer("__new");
 $("#btnExport").onclick=exportXlsx;
+document.querySelectorAll("[data-mod]").forEach(b=>b.onclick=()=>{ ST.mod=b.dataset.mod; try{localStorage.setItem("bbvaMod",ST.mod);}catch(e){} ST.sel=new Set(); ST.openQ=null; ST.preF=""; if(ST.view==="rev") ST.view="pen"; render(); });
 $("#gq").oninput=pintarGQ;
 $("#gq").onkeydown=e=>{ if(e.key==="Enter"){ const b=document.querySelectorAll("#gqRes [data-gq]"); if(b.length===1) b[0].click(); } if(e.key==="Escape"){ $("#gqRes").hidden=true; } };
 $("#gq").onclick=e=>e.stopPropagation();
@@ -1570,7 +1673,7 @@ function conf(){
 }
 const chunk=(a,n)=>{ const r=[]; for(let i=0;i<a.length;i+=n) r.push(a.slice(i,i+n)); return r; };
 function sbErr(e){ const err=new Error(e&&e.message||"error"); err.code=(e&&(e.code==="42501"||/row-level|permission/i.test(e.message||"")))?"perm":"net"; return err; }
-function setCfgRow(id,data){ if(id==="tarifario") ST.tarif=data; else if(id==="general") ST.cfg={...DEFAULT_CFG,...data}; }
+function setCfgRow(id,data){ if(id==="tarifario_af") ST.tarifAF=data; else if(id==="tarifario") ST.tarif=data; else if(id==="general") ST.cfg={...DEFAULT_CFG,...data}; }
 function applyLocal(id,data){ if(data===null) ST.guias.delete(id); else ST.guias.set(id,{...data,_id:id}); }
 function afterData(){ render(); if(openId && openId!=="__new" && document.activeElement && !document.activeElement.closest(".drawer")) renderDrawer(); }
 
