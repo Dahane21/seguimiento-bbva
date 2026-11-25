@@ -365,6 +365,7 @@ function lugarDe(dir,grb){
   if(!d) return "";
   if(/LURIN/.test(d) && /CLAVELES|PRADERAS/.test(d)) return "ALMACÉN LURÍN";
   if(/PANAMA\s*3626|ZYTRUST|ZITRUST/.test(d)) return "ZYTRUST (PROVEEDOR)";
+  if(/\bICA\s*830\b/.test(d)) return "JR. ICA 830 (PROVEEDOR)";
   if(/TECHSOL/.test(d)) return "TECHSOL (PROVEEDOR)";
   if(/PANAMA\s*3055/.test(d)) return /\bMDA\b/.test(d)?"MDA":(/ALMACEN/.test(d)?"SEDE CENTRAL":(p==="TS03"?"MDA":"SEDE CENTRAL"));
   const i=d.lastIndexOf(" OF "); if(i>=0 && d.slice(i+4).trim()) return "OF. "+d.slice(i+4).trim();
@@ -530,7 +531,7 @@ function render(){
   $("#nAcu").textContent=all.filter(g=>g.acuse&&enPendientes(g)).length||"";
   document.querySelectorAll("[data-mod]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mod===ST.mod));
   $("#bandMod").textContent=MOD_NOMBRE[ST.mod];
-  $("#nAnu").textContent=[...ST.guias.values()].filter(g=>g.anulada).length||"";
+  $("#nAnu").textContent=[...ST.guias.values()].filter(g=>g.anulada&&moduloDe(g)===ST.mod).length||"";
   document.querySelectorAll("#tabs button").forEach(b=>{ if(b.dataset.v===ST.view) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current"); });
   $("#viewTitle").textContent=TITLES[ST.view];
   const m=$("#main");
@@ -903,11 +904,7 @@ function vAcu(){
   const q=ST.rq.trim(), qd=dig(q), hasLetters=/[A-Z]/i.test(q);
   const matches=(q.length>=3)?all.filter(g=>!ST.rqList.includes(g._id)&&(hasLetters?(qn(g.grt).includes(qn(q))||qn(g.grb).includes(qn(q))):(dig(g.grt).endsWith(qd)||dig(g.grb).endsWith(qd)))).slice(0,10):[];
   const lst=ST.rqList.map(id=>enrich(ST.guias.get(id)||{_id:id}));
-  const scOk=SCAN.items.filter(i=>i.status==="ok").length;
   return `
-  <div class="search scancta"><div><b style="font-size:16px">Escanear el QR de SUNAT con la cámara</b>
-    <p class="note">Desde el celular: cada guía escaneada suena y se le pone <b>acuse recibido con fecha de hoy</b>. ${SCAN.items.length?`Hoy llevas ${scOk} acuses escaneados.`:""}</p></div>
-    <button class="btn pri" id="scStart" style="font-size:16px;padding:12px 18px">INICIAR CÁMARA</button></div>
   <div class="search"><label class="t" for="rq">Registro rápido: escribe los últimos dígitos de la GR Tradel o GR BBVA y toca la guía para agregarla a la lista</label>
     <div class="bar"><input id="rq" autocomplete="off" inputmode="numeric" value="${esc(ST.rq)}" placeholder="Ej. 0210" style="flex:1 1 220px;font-size:18px;padding:10px 12px;max-width:320px"></div>
     ${q.length>=3?(matches.length?`<div class="rqm">${matches.map(g=>`<button class="rqi" data-rqadd="${esc(g._id)}"><span class="rqc">＋</span><b class="mono">${esc(g.grt)}</b><span class="mono muted">${esc(g.grb)}</span><span>${esc(g.dest)}</span>${pill(estado(g))}${g.acuse?`<span class="muted">ya tiene acuse ${fmt(g.acuse)}</span>`:""}</button>`).join("")}</div>`:`<p class="note">Ninguna guía termina en ${esc(q)}.</p>`):`<p class="note">Escribe al menos 3 dígitos. Si sale una sola, presiona Enter para agregarla.</p>`}
@@ -1059,7 +1056,7 @@ async function setPre(val){
 function vImp(){
   return `
   <div class="card"><h2>1 · Guías del día</h2><div class="sec">
-    <p class="note">Sube el Excel que descargas de <b>My Gestwin</b> (Guías de Remisión Transportista) o el <b>Excel ordenado</b> (hojas Informática / Activo fijo). Se reconoce solo. Las guías nuevas se crean con oficina, código, GR BBVA, servicio, bultos, peso y contenido; las que ya están solo se completan donde falte un dato.</p>
+    <p class="note"><b>Un solo archivo para los dos módulos:</b> sube el Excel de <b>My Gestwin</b> con todos los almacenes, y cada guía se va sola a <b>Informática</b> o <b>Activo fijo</b> según su almacén. No importa qué módulo tengas elegido arriba. También acepta el <b>Excel ordenado</b>. Se reconoce solo. Las guías nuevas se crean con oficina, código, GR BBVA, servicio, bultos, peso y contenido; las que ya están solo se completan donde falte un dato.</p>
     <div class="drop" id="dropSeg">Arrastra aquí el Excel de guías o <label style="display:inline;color:var(--accent);cursor:pointer;font-size:14px">elígelo<input type="file" id="fileSeg" accept=".xlsx,.xls" hidden></label></div>
     <div id="segRes"></div></div></div>
   <div class="card"><h2>2 · Manifiesto del día</h2><div class="sec">
@@ -1632,7 +1629,7 @@ async function importSeguimiento(file){
       const pairs=[...nuevos, ...completar.map(([id,d])=>[id,{...(ST.guias.get(id)||{}),...d}])];
       await DB.putMany(pairs,(d,t)=>{i=d;p.firstElementChild.style.width=(d/t*100)+"%";});
       toast(`Listo: ${nuevos.length} nuevas, ${completar.length} completadas.`);
-      out.innerHTML=`<p class="note">Listo: ${nuevos.length} guías nuevas y ${completar.length} completadas desde ${esc(file.name)}. Ahora sube el manifiesto del día.</p>`;
+      out.innerHTML=`<p class="note"><b>${nINF} a Informática y ${nAF} a Activo fijo.</b> Listo: ${nuevos.length} guías nuevas y ${completar.length} completadas desde ${esc(file.name)}. Ahora sube el manifiesto del día.</p>`;
     }catch(err){ writeErr(err); out.insertAdjacentHTML("beforeend",`<p class="note">Se importaron ${i} de ${tot}. Vuelve a subir el archivo para continuar: lo que ya entró no se repite.</p>`); }
   };
 }
