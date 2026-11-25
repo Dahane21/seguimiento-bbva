@@ -137,6 +137,8 @@ th .hf.on{color:#fff;background:var(--accent)}
 .sclist{flex:1;overflow-y:auto;background:var(--panel)}
 .scit{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px}
 .scit.ok span{color:var(--ok)} .scit.error span{color:var(--bad)} .scit.wait span,.scit.queued span,.scit.retrying span{color:var(--muted)}
+.ffrepbox{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ffrepbox input{padding:5px 6px}
 .qrow td{background:var(--accent-soft);padding:0}
 tr.qopen td{background:var(--accent-soft)}
 .qp{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 14px;position:sticky;left:0;max-width:min(1060px,calc(100vw - 340px))}
@@ -874,12 +876,14 @@ function vFF(){
     {h:"Motivo",f:g=>esc(g.ff.motivo),cls:"clip"},
     C.dest,C.grt,C.est,
     {h:"¿Facturar?",k:"",f:g=>g.ff.reprog||g.fent?'<span class="muted">Reprogramado</span>':`<button class="btn sm ${g.ff.facturar?"":"pri"}" data-fff="${esc(g._id)}">${g.ff.facturar?"Volver a espera":"Pasar a Por facturar"}</button>`},
-    {h:"Reprogramar",v:g=>fmt(g.ff.reprog),f:g=>g.fent?"":`<input type="date" class="ffrep" data-id="${esc(g._id)}" value="${esc(g.ff.reprog||"")}" aria-label="Fecha de reprogramación de ${esc(g.grt)}" title="Pon la fecha y vuelve a Pendientes">`}, C.total];
+    {h:"Reprogramar",v:g=>fmt(g.ff.reprog),f:g=>{ if(g.fent) return "";
+      if(ST.ffRepOpen===g._id) return `<span class="ffrepbox"><label class="qd">¿Para qué fecha? <input type="date" class="ffrepd" value="${esc(g.ff.reprog||iso(new Date(Date.now()+864e5)))}"></label><button class="btn sm pri" data-ffrepok="${esc(g._id)}">Reprogramar</button><button class="btn sm" data-ffrepno="1">Cancelar</button></span>`;
+      return g.ff.reprog?`<span>${fmt(g.ff.reprog)}</span> <button class="btn sm" data-ffrep="${esc(g._id)}">Cambiar fecha</button> <button class="btn sm" data-ffrepdel="${esc(g._id)}">Quitar</button>`:`<button class="btn sm" data-ffrep="${esc(g._id)}">Reprogramar</button>`; }}, C.total];
   return `
   <div><div class="seg"><button data-ffs="pend" aria-pressed="${ST.ffShow==="pend"}">Sin reprogramar (${pend.length})</button>
   <button data-ffs="all" aria-pressed="${ST.ffShow==="all"}">Todos (${all.length})</button></div></div>
   <div class="card">${show.length?rowsTable(sorted(show),cols):`<div class="empty">${ST.loaded?"No hay falsos fletes aquí. Para registrar uno, abre la guía y usa <b>Registrar falso flete</b>.":"Cargando…"}</div>`}</div>
-  <p class="note">Si se va a reprogramar, deja <b>¿Facturar?</b> en No. Cuando se reprograme, pon la fecha en <b>Reprogramar</b> y la guía vuelve a Pendientes. Si no se reprograma, dale <b>Pasar a Por facturar</b>.</p>`;
+  <p class="note">Si se va a reprogramar, deja <b>¿Facturar?</b> en No. Cuando se reprograme, dale <b>Reprogramar</b>, elige la fecha y la guía vuelve a Pendientes. Si no se reprograma, dale <b>Pasar a Por facturar</b>.</p>`;
 }
 
 function dondeEsta(g){
@@ -1083,9 +1087,13 @@ function bindView(){
   const q=$("#q"); if(q) q.oninput=()=>{ST.filt.q=q.value; ST.limit=300; render();};
   m.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ST.filt[b.dataset.f]=b.dataset.v; ST.limit=300; render();});
   const a=m.querySelector("[data-alert]"); if(a) a.onclick=()=>{ST.filt.alert=!ST.filt.alert;render();};
-  m.querySelectorAll(".ffrep").forEach(el=>{ el.onclick=e=>e.stopPropagation(); el.onkeydown=e=>e.stopPropagation();
-    el.onchange=async()=>{ const id=el.dataset.id, g=ST.guias.get(id);
-      try{ await DB.patch(id,{ff:{...g.ff,reprog:el.value,facturar:el.value?false:g.ff.facturar}}); toast(el.value?`${g.grt} reprogramada para el ${fmt(el.value)}: vuelve a Pendientes.`:`${g.grt} vuelve a falso flete.`); }catch(err){ writeErr(err); } }; });
+  const setRep=async(id,fecha)=>{ const g=ST.guias.get(id); ST.ffRepOpen=null;
+    try{ await DB.patch(id,{ff:{...g.ff,reprog:fecha,facturar:fecha?false:g.ff.facturar}}); toast(fecha?`${g.grt} reprogramada para el ${fmt(fecha)}: vuelve a Pendientes.`:`${g.grt} vuelve a falso flete.`); }catch(err){ writeErr(err); } render(); };
+  m.querySelectorAll(".ffrepbox,.ffrepd").forEach(el=>{ el.onclick=e=>e.stopPropagation(); el.onkeydown=e=>e.stopPropagation(); });
+  m.querySelectorAll("[data-ffrep]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); ST.ffRepOpen=b.dataset.ffrep; render(); });
+  m.querySelectorAll("[data-ffrepno]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); ST.ffRepOpen=null; render(); });
+  m.querySelectorAll("[data-ffrepok]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); const d=b.closest(".ffrepbox").querySelector(".ffrepd").value; if(!d) return toast("Elige la fecha."); setRep(b.dataset.ffrepok,d); });
+  m.querySelectorAll("[data-ffrepdel]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); setRep(b.dataset.ffrepdel,""); });
   m.querySelectorAll("[data-fff]").forEach(b=>b.onclick=async e=>{ e.stopPropagation(); const id=b.dataset.fff, g=ST.guias.get(id);
     try{ await DB.patch(id,{ff:{...g.ff,facturar:!g.ff.facturar}}); toast(g.ff.facturar?"Falso flete vuelve a espera.":"Falso flete pasado a Por facturar."); }catch(err){ writeErr(err); } });
   m.querySelectorAll("[data-ffs]").forEach(b=>b.onclick=()=>{ST.ffShow=b.dataset.ffs;render();});
