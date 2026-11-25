@@ -347,7 +347,8 @@ function lugarDe(dir,grb){
   const d=norm(fixMoji(dir)), p=String(grb||"").toUpperCase().slice(0,4);
   if(!d) return "";
   if(/LURIN/.test(d) && /CLAVELES|PRADERAS/.test(d)) return "ALMACÉN LURÍN";
-  if(/PANAMA\s*3626/.test(d)) return "ZYTRUST (PROVEEDOR)";
+  if(/PANAMA\s*3626|ZYTRUST|ZITRUST/.test(d)) return "ZYTRUST (PROVEEDOR)";
+  if(/TECHSOL/.test(d)) return "TECHSOL (PROVEEDOR)";
   if(/PANAMA\s*3055/.test(d)) return /\bMDA\b/.test(d)?"MDA":(/ALMACEN/.test(d)?"SEDE CENTRAL":(p==="TS03"?"MDA":"SEDE CENTRAL"));
   const i=d.lastIndexOf(" OF "); if(i>=0 && d.slice(i+4).trim()) return "OF. "+d.slice(i+4).trim();
   return fixMoji(dir).toUpperCase().replace(/\s+/g," ").trim().slice(0,45);
@@ -362,11 +363,14 @@ function ruta(g){
   if(!d){ if(p==="TS02") d="SEDE CENTRAL"; else if(p==="TC02") d="ALMACÉN LURÍN"; else if(p==="TS03"&&rec) d="MDA"; }
   return {o,d};
 }
+// Sello sugerido según a dónde llega la carga: oficina → SUBGERENTE, almacén → ALMACEN, MDA → MDA, proveedor → lo escribe la ejecutiva
 function recepAuto(g){
-  const r=ruta(g);
-  if(/\bMDA\b/.test(r.d||"")) return "RECIBIDO MDA";
-  if(g.serv==="RECOJO") return "SELLO ALMACEN";
-  return "SELLO SUBGERENTE";
+  const d=ruta(g).d||"";
+  if(/\(PROVEEDOR\)/.test(d)) return "";
+  if(/\bMDA\b/.test(d)) return "SELLO MDA";
+  if(/ALMAC|SEDE CENTRAL/.test(d)) return "SELLO ALMACEN";
+  if(/^OF\./.test(d)) return "SELLO SUBGERENTE";
+  return g.serv==="RECOJO"?"SELLO ALMACEN":"SELLO SUBGERENTE";
 }
 function vence(g){
   if(g.plazoExt){ const d=new Date(g.plazoExt); if(!isNaN(d)) return d; }
@@ -666,8 +670,9 @@ function quickRow(g,n){
     <b class="mono">${esc(g.grt)}</b><span class="muted">${esc(g.serv)} · ${esc(g.dest)}</span>
     ${simple?`<span class="pill p-ENTREGADO">Entregado</span><input type="hidden" name="qm" value="ent">`:`<div class="seg"><button type="button" data-qm="ret" aria-pressed="${modo==="ret"}">Retirado</button><button type="button" data-qm="ent" aria-pressed="${modo==="ent"}">Entregado</button></div>`}
     <label class="qd">Fecha <input type="date" id="qDate" value="${today()}"></label>
-    <label class="qd" id="qRecep" ${modo==="ent"?"":"hidden"}>Recepción <select id="qRecepSel">${(()=>{ const cur=g.recepcion||recepAuto(g), ops=["SELLO SUBGERENTE","SELLO ALMACEN","RECIBIDO MDA"]; if(!ops.includes(cur)) ops.unshift(cur);
-      return ops.map(o=>`<option ${o===cur?"selected":""}>${esc(o)}</option>`).join("")+`<option value="__otro">Otro…</option>`; })()}</select><input id="qRecepOtro" placeholder="Quién recibió" hidden style="width:160px"></label>
+    <label class="qd" id="qRecep" ${modo==="ent"?"":"hidden"}>Recepción <select id="qRecepSel">${(()=>{ const cur=g.recepcion||recepAuto(g), ops=["SELLO SUBGERENTE","SELLO ALMACEN","SELLO MDA"]; if(cur&&!ops.includes(cur)) ops.unshift(cur);
+      return ops.map(o=>`<option ${o===cur?"selected":""}>${esc(o)}</option>`).join("")+`<option value="__otro" ${cur?"":"selected"}>Otro…</option>`; })()}</select><input id="qRecepOtro" placeholder="${/\(PROVEEDOR\)/.test(ruta(g).d||"")?"Ej. SELLO "+esc((ruta(g).d||"").replace(/\s*\(PROVEEDOR\)/,"")):"Quién recibió"}" ${g.recepcion||recepAuto(g)?"hidden":""} style="width:180px"></label>
+    <span class="qd" id="qRet" ${modo==="ret"?"":"hidden"}>Se guarda como: <b>SE RECOGIÓ</b></span>
     <button class="btn pri" id="qSave" data-modo="${modo}">Guardar</button>
     <span class="spacer"></span>
     <button class="btn sm" id="qFF">Falso flete</button><button class="btn sm" id="qAnu">Anular</button><button class="btn sm" id="qMore">Ver detalle</button>
@@ -983,11 +988,12 @@ function bindView(){
   const qp=m.querySelector(".qp");
   if(qp&&$("#qRecepSel")) $("#qRecepSel").onchange=()=>{ const o=$("#qRecepSel").value==="__otro"; $("#qRecepOtro").hidden=!o; if(o) $("#qRecepOtro").focus(); };
   if(qp){ const id=qp.dataset.qid, g=enrich(ST.guias.get(id)||{}); qp.onclick=e=>e.stopPropagation();
-    qp.querySelectorAll("[data-qm]").forEach(b=>b.onclick=()=>{ qp.querySelectorAll("[data-qm]").forEach(x=>x.setAttribute("aria-pressed",x===b)); $("#qSave").dataset.modo=b.dataset.qm; $("#qRecep").hidden=b.dataset.qm!=="ent"; });
+    qp.querySelectorAll("[data-qm]").forEach(b=>b.onclick=()=>{ qp.querySelectorAll("[data-qm]").forEach(x=>x.setAttribute("aria-pressed",x===b)); $("#qSave").dataset.modo=b.dataset.qm; $("#qRecep").hidden=b.dataset.qm!=="ent"; $("#qRet").hidden=b.dataset.qm!=="ret"; });
     $("#qSave").onclick=async()=>{ const d=$("#qDate").value; if(!d) return toast("Pon la fecha.");
       const ent=$("#qSave").dataset.modo==="ent";
       const sel=$("#qRecepSel"), rec=sel&&sel.value==="__otro"?$("#qRecepOtro").value.trim():(sel?sel.value:(g.recepcion||recepAuto(g)));
-      try{ await DB.patch(id, ent?{fent:d,recepcion:rec||recepAuto(g)}:{fret:d}); ST.openQ=null; toast(ent?`${g.grt} entregada el ${fmt(d)}.`:`${g.grt} retirada el ${fmt(d)}.`); render(); }catch(err){ writeErr(err); } };
+      if(ent&&!rec) return toast("Escribe quién recibió (ej. SELLO ZYTRUST).");
+      try{ await DB.patch(id, ent?{fent:d,recepcion:rec}:{fret:d,retiroNota:"SE RECOGIÓ"}); ST.openQ=null; toast(ent?`${g.grt} entregada el ${fmt(d)}.`:`${g.grt} retirada el ${fmt(d)}.`); render(); }catch(err){ writeErr(err); } };
     $("#qFF").onclick=()=>{ $("#qFFBox").hidden=false; $("#qMot").focus(); };
     $("#qFFSave").onclick=async()=>{ const d=$("#qDate").value||today();
       try{ await DB.patch(id,{ff:{fecha:d,motivo:$("#qMot").value.trim(),reprog:"",facturar:false}}); ST.openQ=null; toast(`${g.grt}: falso flete registrado.`); render(); }catch(err){ writeErr(err); } };
@@ -1151,7 +1157,7 @@ function renderDrawer(){
   $("#dSave").onclick=()=>saveDrawer(isNew,g);
   const qf=$("#qff"); if(qf) qf.onclick=()=>{ $("#ffBox").hidden=false; $("#ff_fecha").value=today(); $("#ff_motivo").focus(); qf.remove(); };
   const fd=$("#ffDel"); if(fd) fd.onclick=()=>{ $("#ff_fecha").value=""; $("#ff_motivo").value=""; $("#ff_reprog").value=""; $("#ff_facturar").value=""; $("#ffBox").hidden=true; toast("Falso flete quitado. Pulsa Guardar."); };
-  document.querySelectorAll("[data-q]").forEach(b=>b.onclick=async()=>{ await writeGuia(openId,{...g,[b.dataset.q]:today(),...(b.dataset.q==="fent"&&!g.recepcion?{recepcion:recepAuto(g)}:{})}); toast(b.dataset.q==="fent"?"Marcada como entregada.":"Marcada como retirada."); });
+  document.querySelectorAll("[data-q]").forEach(b=>b.onclick=async()=>{ await writeGuia(openId,{...g,[b.dataset.q]:today(),...(b.dataset.q==="fent"&&!g.recepcion&&recepAuto(g)?{recepcion:recepAuto(g)}:{}),...(b.dataset.q==="fret"?{retiroNota:"SE RECOGIÓ"}:{})}); toast(b.dataset.q==="fent"?"Marcada como entregada.":"Marcada como retirada."); });
   const da=$("#dAnu"); if(da) da.onclick=()=>{ $("#delBox").innerHTML=`<div class="bar" style="margin-top:6px"><input id="anuMot" placeholder="Motivo de la anulación" style="flex:1 1 220px"><button class="btn sm" id="anuYes" style="color:var(--bad)">Anular ${esc(g.grt)}</button><button class="btn sm" id="anuNo">Cancelar</button></div>`;
     $("#anuMot").focus(); $("#anuNo").onclick=()=>$("#delBox").innerHTML="";
     $("#anuYes").onclick=async()=>{ try{ await anularGuia(openId,$("#anuMot").value.trim()); closeDrawer(); }catch(err){ writeErr(err); } }; };
