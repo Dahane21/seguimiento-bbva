@@ -256,6 +256,7 @@ label input,label select,label textarea{color:var(--ink);font-size:14px;width:10
       <button data-v="acu"><span class="ic">▣</span><span class="lbl">Acuses</span><span class="n" id="nAcu"></span></button>
       <button data-v="ff"><span class="ic">⚠</span><span class="lbl">Falsos fletes</span><span class="n hot" id="nFF"></span></button>
       <button data-v="rev"><span class="ic">?</span><span class="lbl">Por revisar</span><span class="n hot" id="nRev"></span></button>
+      <button data-v="anu"><span class="ic">⊘</span><span class="lbl">Anuladas</span><span class="n" id="nAnu"></span></button>
       <div class="grp">Facturación</div>
       <button data-v="fac"><span class="ic">S/</span><span class="lbl">Por facturar</span><span class="n" id="nFac"></span></button>
       <div class="grp">Datos</div>
@@ -292,7 +293,7 @@ label input,label select,label textarea{color:var(--ink);font-size:14px;width:10
 // ---------- estado ----------
 const ST = { guias:new Map(), cfg:null, view:"seg", filt:{q:"", serv:"", est:"", alert:false}, sort:{k:"fguia",d:-1}, mes:"", limit:300, ffShow:"pend", loaded:false, canWrite:null, wide:false };
 try{ ST.wide = localStorage.getItem("segWide")==="1"; }catch(e){}
-const TITLES={seg:"Seguimiento",pen:"Pendientes",acu:"Acuses recibidos",rev:"Por revisar (Economato / Mobiliario)",ff:"Falsos fletes",fac:"Por facturar",imp:"Importar data",cfg:"Ajustes"};
+const TITLES={seg:"Seguimiento",pen:"Pendientes",acu:"Acuses recibidos",rev:"Por revisar (Economato / Mobiliario)",anu:"Guías anuladas",ff:"Falsos fletes",fac:"Por facturar",imp:"Importar data",cfg:"Ajustes"};
 
 const DEFAULT_CFG = { local:2, nacional:5, cierres:[] };
 ST.tarif=null; ST.sel=new Set(); ST.preF=""; ST.revF="pend"; ST.pT=""; ST.pB=""; ST.openQ=null; ST.scan=[]; ST.colF={}; ST.hfT=[]; ST.rq=""; ST.rqList=[];
@@ -390,8 +391,17 @@ function areaSerie(g){
   if(p==="TC" && MOB_RX.test(norm(g.cont))) return "MOBILIARIO?";
   return "INFORMATICA";
 }
-function visible(g){ if(g.revision==="EXCLUIDA") return false; if(g.revision==="INCLUIDA") return true; return areaSerie(g)==="INFORMATICA"; }
-function porRevisar(g){ return !g.revision && areaSerie(g)!=="INFORMATICA"; }
+function visible(g){ if(g.anulada) return false; if(g.revision==="EXCLUIDA") return false; if(g.revision==="INCLUIDA") return true; return areaSerie(g)==="INFORMATICA"; }
+function porRevisar(g){ return !g.anulada && !g.revision && areaSerie(g)!=="INFORMATICA"; }
+async function anularGuia(id,motivo){
+  const g=ST.guias.get(id); if(!g) return;
+  await DB.putMany([[id,{...g,anulada:{fecha:today(),motivo:motivo||"",por:myName||""}}]]);
+  toast(`${g.grt} anulada. Está en la pestaña Anuladas.`);
+}
+async function restaurarGuia(id){
+  const g={...ST.guias.get(id)}; if(!g) return; delete g.anulada; delete g._id;
+  await DB.putMany([[id,g]]); toast(`${g.grt} restaurada.`);
+}
 const num=v=>{ const n=parseFloat(String(v??"").replace(",",".")); return isFinite(n)?n:0; };
 const r2=n=>Math.round(Number(n.toFixed(9))*100)/100;
 function isFF(g){ return !!(g.ff&&g.ff.fecha&&!g.ff.reprog&&!g.fent); }
@@ -467,6 +477,7 @@ function render(){
   $("#nFac").textContent=all.filter(g=>facturable(g)&&!g.pre).length||"";
   $("#nAcu").textContent=all.filter(g=>g.acuse&&!facturable(g)).length||"";
   $("#nRev").textContent=[...ST.guias.values()].filter(porRevisar).length||"";
+  $("#nAnu").textContent=[...ST.guias.values()].filter(g=>g.anulada).length||"";
   document.querySelectorAll("#tabs button").forEach(b=>{ if(b.dataset.v===ST.view) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current"); });
   $("#viewTitle").textContent=TITLES[ST.view];
   const m=$("#main");
@@ -475,7 +486,7 @@ function render(){
   if(ST.view==="imp" && m.dataset.v==="imp") return; // no borrar una importación en curso
   if(m.dataset.v!==ST.view) ST.sel=new Set();
   ST.hfT=[]; closeHF();
-  m.innerHTML = ({seg:vSeg,pen:vPen,acu:vAcu,ff:vFF,rev:vRev,fac:vFac,imp:vImp,cfg:vCfg})[ST.view]();
+  m.innerHTML = ({seg:vSeg,pen:vPen,acu:vAcu,ff:vFF,rev:vRev,anu:vAnu,fac:vFac,imp:vImp,cfg:vCfg})[ST.view]();
   m.dataset.v=ST.view;
   bindView();
   if(keepFocus && ["q","pqT","pqB","scan","rq"].includes(keepFocus)){ const q=$("#"+keepFocus); if(q){ q.focus(); try{q.setSelectionRange(caret,caret);}catch(e){} } }
@@ -658,7 +669,8 @@ function quickRow(g,n){
     <span class="muted" id="qRecep" ${modo==="ent"?"":"hidden"}>Recepción: <b>${esc(g.recepcion||recepAuto(g))}</b></span>
     <button class="btn pri" id="qSave" data-modo="${modo}">Guardar</button>
     <span class="spacer"></span>
-    <button class="btn sm" id="qFF">Falso flete</button><button class="btn sm" id="qMore">Ver detalle</button>
+    <button class="btn sm" id="qFF">Falso flete</button><button class="btn sm" id="qAnu">Anular</button><button class="btn sm" id="qMore">Ver detalle</button>
+    <div id="qAnuBox" class="bar" hidden style="width:100%"><input id="qAnuMot" placeholder="Motivo de la anulación" style="flex:1"><button class="btn sm" id="qAnuSave" style="color:var(--bad)">Anular guía</button></div>
     <div id="qFFBox" class="bar" hidden style="width:100%"><input id="qMot" placeholder="Motivo del falso flete" style="flex:1"><button class="btn sm" id="qFFSave">Guardar falso flete</button></div>
   </div></td></tr>`;
 }
@@ -696,6 +708,7 @@ async function aplicarScan(item){
   const g=guiaPorGR(item.gr);
   if(!g){ item.status="error"; item.error="No está en el seguimiento. ¿Ya importaste las guías de ese día?"; scanFeedback("error"); return; }
   item.guia=g.grt;
+  if(g.anulada){ item.status="error"; item.error=`Está anulada (${fmt(g.anulada.fecha)})`; scanFeedback("error"); return; }
   if(!visible(g)){ item.status="error"; item.error="Está en Por revisar (Economato / Mobiliario)"; scanFeedback("error"); return; }
   if(SCAN.items.some(x=>x!==item&&x.guia===g.grt&&x.status==="ok")){ item.status="error"; item.error="Duplicada: ya la escaneaste"; scanFeedback("dup"); return; }
   item.ya=g.acuse||"";
@@ -831,8 +844,16 @@ function vFF(){
   <p class="note">Si se va a reprogramar, deja <b>¿Facturar?</b> en No. Cuando se reprograme, pon la fecha de reprogramación. Si no se reprograma, dale <b>Pasar a Por facturar</b>.</p>`;
 }
 
+function vAnu(){
+  const rows=listAll().filter(g=>g.anulada);
+  const cols=[{h:"",nof:1,f:g=>`<button class="btn sm" data-restaurar="${esc(g._id)}">Restaurar</button>`},{h:"F. anulación",k:"fanu",v:g=>fmt(g.anulada.fecha),f:g=>fmt(g.anulada.fecha)},{h:"Motivo",f:g=>t(g.anulada.motivo)||'<span class="muted">—</span>',cls:"clip"},
+    {h:"Anulada por",f:g=>t(g.anulada.por)},C.fguia,C.serv,C.dest,C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>`},C.est];
+  return `<div class="search"><p class="note">Las guías anuladas no aparecen en Seguimiento, Pendientes, Acuses ni Por facturar, y no se vuelven a crear si las importas de nuevo. Si anulaste una por error, dale <b>Restaurar</b>.</p></div>
+  <div class="card">${rows.length?rowsTable(rows,cols,false):`<div class="empty">${ST.loaded?"No hay guías anuladas.":"Cargando…"}</div>`}</div>`;
+}
+
 function vRev(){
-  const all=listAll().filter(g=>areaSerie(g)!=="INFORMATICA" || g.revision);
+  const all=listAll().filter(g=>!g.anulada&&(areaSerie(g)!=="INFORMATICA" || g.revision));
   const pend=all.filter(porRevisar), exc=all.filter(g=>g.revision==="EXCLUIDA"), inc=all.filter(g=>g.revision==="INCLUIDA");
   const show=ST.revF==="pend"?pend:ST.revF==="exc"?exc:inc;
   const cols=[C.sel,C.fguia,C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>${g.grb?`<button class="cp" data-cp="${esc(g.grb)}" title="Copiar GR BBVA" aria-label="Copiar ${esc(g.grb)}">⧉</button>`:""}`},
@@ -915,7 +936,7 @@ function vImp(){
     <div class="drop" id="dropMan">Arrastra aquí el archivo de manifiestos o <label style="display:inline;color:var(--accent);cursor:pointer;font-size:14px">elígelo<input type="file" id="fileMan" accept=".xlsx,.xls,.csv" hidden></label></div>
     <div id="manRes"></div></div></div>
   <div class="card"><h2>4 · Estados del Extranet</h2><div class="sec">
-    <p class="note">Sube el Excel que bajas del Extranet (Listado Guías Cliente). Cruza por <b>Guía Tradel</b> o <b>Guía Cliente</b> y completa: <b>ENTREGADO</b> con su fecha y quién recibió, <b>FALSO FLETE</b> con su fecha y motivo (queda en la pestaña Falsos fletes), la fecha de retiro, el corte (11 / 15) y el plazo. Lo que está EN PROCESO no cambia. No crea guías nuevas.</p>
+    <p class="note">Sube el Excel que bajas del Extranet (Listado Guías Cliente). Cruza por <b>Guía Tradel</b> o <b>Guía Cliente</b>. <b>Solo a las guías con acuse recibido</b> les completa: <b>ENTREGADO</b> con su fecha y quién recibió, <b>FALSO FLETE</b> con su fecha y motivo (queda en la pestaña Falsos fletes), y la fecha de retiro. A las guías <b>sin acuse</b> solo les actualiza el corte (11 / 15) y el plazo. Lo que está EN PROCESO no cambia. No crea guías nuevas.</p>
     <div class="drop" id="dropExt">Arrastra aquí el archivo del Extranet o <label style="display:inline;color:var(--accent);cursor:pointer;font-size:14px">elígelo<input type="file" id="fileExt" accept=".xlsx,.xls" hidden></label></div>
     <div id="extRes"></div></div></div>
   <div class="card"><h2>3 · Tarifario (solo cuando cambie)</h2><div class="sec">
@@ -968,6 +989,8 @@ function bindView(){
     $("#qFFSave").onclick=async()=>{ const d=$("#qDate").value||today();
       try{ await DB.patch(id,{ff:{fecha:d,motivo:$("#qMot").value.trim(),reprog:"",facturar:false}}); ST.openQ=null; toast(`${g.grt}: falso flete registrado.`); render(); }catch(err){ writeErr(err); } };
     $("#qMore").onclick=()=>openDrawer(id);
+    $("#qAnu").onclick=()=>{ $("#qAnuBox").hidden=false; $("#qAnuMot").focus(); };
+    $("#qAnuSave").onclick=async()=>{ try{ await anularGuia(id,$("#qAnuMot").value.trim()); ST.openQ=null; render(); }catch(err){ writeErr(err); } };
   }
   const rq=$("#rq"); if(rq){
     rq.oninput=()=>{ ST.rq=rq.value; render(); };
@@ -979,6 +1002,7 @@ function bindView(){
   const scs=$("#scStart"); if(scs) scs.onclick=startScanCamera;
   const rqs=$("#rqSave"); if(rqs) rqs.onclick=async()=>{ const ids=[...ST.rqList]; rqs.disabled=true;
     try{ await DB.putMany(ids.map(id=>{ const g=ST.guias.get(id); return [id,{...g,acuse:g.acuse||today()}]; })); ST.rqList=[]; toast(`Acuse recibido puesto a ${ids.length} guías.`); render(); }catch(err){ writeErr(err); rqs.disabled=false; } };
+  m.querySelectorAll("[data-restaurar]").forEach(b=>b.onclick=async e=>{ e.stopPropagation(); b.disabled=true; try{ await restaurarGuia(b.dataset.restaurar); }catch(err){ writeErr(err); b.disabled=false; } });
   m.querySelectorAll(".cp").forEach(b=>{ b.onkeydown=e=>e.stopPropagation(); b.onclick=async e=>{ e.stopPropagation(); const v=b.dataset.cp;
     try{ await navigator.clipboard.writeText(v); }catch(err){ const ta=document.createElement("textarea"); ta.value=v; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(e2){} ta.remove(); }
     b.textContent="✓"; b.classList.add("ok"); setTimeout(()=>{ b.textContent="⧉"; b.classList.remove("ok"); },1200); toast(`Copiado: ${v}`); }; });
@@ -1115,7 +1139,7 @@ function renderDrawer(){
       </fieldset>
       <p class="note">${ultima}</p>
     </div>
-    <div class="df"><button class="btn pri" id="dSave">Guardar</button>${isNew?"":`<span class="spacer"></span><button class="btn" id="dDel">Eliminar guía</button>`}<div id="delBox" class="full" style="width:100%"></div></div>
+    <div class="df"><button class="btn pri" id="dSave">Guardar</button>${isNew?"":`<span class="spacer"></span>${g.anulada?`<button class="btn" id="dRest">Restaurar guía</button>`:`<button class="btn" id="dAnu">Anular guía</button>`}<button class="btn" id="dDel">Eliminar guía</button>`}<div id="delBox" class="full" style="width:100%"></div></div>
   </aside>`;
   const upd=()=>{ const t={...ge,peso:$("#f_peso").value,tar:$("#f_tar").value||(ge.tarT??""),pri:$("#f_pri").value||(ge.priT??"")}; const k=costo(t);
     $("#costs").innerHTML=`<div>Peso rest.<b>${k.rest.toFixed(2)}</b></div><div>Flete x kilo<b>${money(k.fxk)}</b></div><div>Cond. FF<b>${money(k.cond)}</b></div><div>Flete total<b>${money(k.flete)}</b></div><div>Total c/IGV<b>${money(k.total)}</b></div>`; };
@@ -1125,6 +1149,10 @@ function renderDrawer(){
   const qf=$("#qff"); if(qf) qf.onclick=()=>{ $("#ffBox").hidden=false; $("#ff_fecha").value=today(); $("#ff_motivo").focus(); qf.remove(); };
   const fd=$("#ffDel"); if(fd) fd.onclick=()=>{ $("#ff_fecha").value=""; $("#ff_motivo").value=""; $("#ff_reprog").value=""; $("#ff_facturar").value=""; $("#ffBox").hidden=true; toast("Falso flete quitado. Pulsa Guardar."); };
   document.querySelectorAll("[data-q]").forEach(b=>b.onclick=async()=>{ await writeGuia(openId,{...g,[b.dataset.q]:today(),...(b.dataset.q==="fent"&&!g.recepcion?{recepcion:recepAuto(g)}:{})}); toast(b.dataset.q==="fent"?"Marcada como entregada.":"Marcada como retirada."); });
+  const da=$("#dAnu"); if(da) da.onclick=()=>{ $("#delBox").innerHTML=`<div class="bar" style="margin-top:6px"><input id="anuMot" placeholder="Motivo de la anulación" style="flex:1 1 220px"><button class="btn sm" id="anuYes" style="color:var(--bad)">Anular ${esc(g.grt)}</button><button class="btn sm" id="anuNo">Cancelar</button></div>`;
+    $("#anuMot").focus(); $("#anuNo").onclick=()=>$("#delBox").innerHTML="";
+    $("#anuYes").onclick=async()=>{ try{ await anularGuia(openId,$("#anuMot").value.trim()); closeDrawer(); }catch(err){ writeErr(err); } }; };
+  const dr=$("#dRest"); if(dr) dr.onclick=async()=>{ try{ await restaurarGuia(openId); renderDrawer(); }catch(err){ writeErr(err); } };
   const dd=$("#dDel"); if(dd) dd.onclick=()=>{ $("#delBox").innerHTML=`<div class="bar" style="margin-top:6px"><span>¿Eliminar ${esc(g.grt)}? No se puede deshacer.</span><button class="btn sm" id="delYes" style="color:var(--bad)">Sí, eliminar</button><button class="btn sm" id="delNo">No</button></div>`;
     $("#delNo").onclick=()=>$("#delBox").innerHTML=""; $("#delYes").onclick=async()=>{ try{ await DB.del(openId); toast("Guía eliminada."); closeDrawer(); }catch(err){ writeErr(err); } }; };
   if(g.updatedBy && !String(g.updatedBy).startsWith("u_")){ const w=$("#who"); if(w) w.textContent="· "+g.updatedBy; }
@@ -1362,7 +1390,7 @@ async function importExtranet(file){
   const H=rows[hi].map(norm), col=n=>H.indexOf(n);
   const ix={grb:col("GUIA CLIENTE"),grt:col("GUIA TRADEL"),corte:col("CORTE"),plazo:col("PLAZO"),fret:col("FECHA RETIRO"),est:col("ESTADO"),nom:col("ENTREGA NOMBRE"),fec:col("ENTREGA FECHA")};
   const byGrb=new Map(); for(const g of ST.guias.values()) String(g.grb||"").toUpperCase().split(/[\s\/,;]+/).filter(Boolean).forEach(x=>byGrb.set(x,g._id));
-  const cambios=new Map(); let ent=0,ff=0,proc=0,noEsta=0;
+  const cambios=new Map(); let ent=0,ff=0,proc=0,noEsta=0,sinAcuse=0,sinAcuseEnt=0;
   for(const r of rows.slice(hi+1)){
     const grt=fixMoji(r[ix.grt]).toUpperCase(), grb=fixMoji(r[ix.grb]).toUpperCase();
     if(!grt&&!grb) continue;
@@ -1371,6 +1399,8 @@ async function importExtranet(file){
     const p={}, est=norm(r[ix.est]), fec=toISO(r[ix.fec]), nom=fixMoji(r[ix.nom]).replace(/\s+/g," ");
     const c=String(r[ix.corte]).trim(); if(c==="11") p.corte="1"; else if(c==="15") p.corte="2";
     const pl=ix.plazo>=0?toDT(r[ix.plazo]):""; if(pl) p.plazoExt=pl;
+    // Sin acuse recibido: solo corte y plazo. El estado y las fechas no se tocan.
+    if(!ST.guias.get(id).acuse){ sinAcuse++; if(est==="ENTREGADO"||est==="FALSO FLETE") sinAcuseEnt++; cambios.set(id,{...(cambios.get(id)||{}),...p}); continue; }
     const fr=toISO(r[ix.fret]); if(fr) p.fret=fr;
     if(est==="ENTREGADO" && fec){ p.fent=fec; if(nom) p.recepcion=nom; ent++; }
     else if(est==="FALSO FLETE" && fec){ const cur=ST.guias.get(id); if(!cur.fent){ p.ff={...(cur.ff||{}),fecha:fec,motivo:nom||(cur.ff&&cur.ff.motivo)||"",reprog:"",facturar:!!(cur.ff&&cur.ff.facturar)}; ff++; } }
@@ -1379,14 +1409,15 @@ async function importExtranet(file){
   }
   out.innerHTML=`<div class="grid-sum">
     <div class="tile"><b>${cambios.size}</b><span>Guías que cruzan</span></div>
-    <div class="tile aq"><b>${ent}</b><span>Entregadas → pasan a Por facturar</span></div>
-    <div class="tile red"><b>${ff}</b><span>Falsos fletes → quedan en Falsos fletes</span></div>
-    <div class="tile or"><b>${proc}</b><span>En proceso (solo se actualiza corte y plazo)</span></div>
+    <div class="tile aq"><b>${ent}</b><span>Con acuse y entregadas → pasan a Por facturar</span></div>
+    <div class="tile red"><b>${ff}</b><span>Con acuse y falso flete → quedan en Falsos fletes</span></div>
+    <div class="tile or"><b>${proc}</b><span>Con acuse pero en proceso (solo corte y plazo)</span></div>
+    <div class="tile"><b>${sinAcuse}</b><span>Sin acuse recibido: solo corte y plazo${sinAcuseEnt?` (${sinAcuseEnt} figuran entregadas o FF en el Extranet: esperan su acuse)`:""}</span></div>
     <div class="tile"><b>${noEsta}</b><span>No están en el seguimiento: se ignoran</span></div></div>
     <div class="bar"><button class="btn pri" id="applyExt" ${cambios.size?"":"disabled"}>Actualizar ${cambios.size} guías</button><div class="prog" style="flex:1" hidden id="extProg"><i></i></div></div>`;
   $("#applyExt").onclick=async()=>{ $("#applyExt").disabled=true; const pg=$("#extProg"); pg.hidden=false;
     try{ await DB.putMany([...cambios].map(([id,p])=>[id,{...ST.guias.get(id),...p}]),(d,tt)=>{pg.firstElementChild.style.width=(d/tt*100)+"%";});
-      toast(`Extranet: ${cambios.size} guías actualizadas.`); out.innerHTML=`<p class="note">Listo: ${ent} entregadas pasaron a Por facturar y ${ff} falsos fletes quedaron en la pestaña Falsos fletes. ${proc} siguen en proceso. ${noEsta} filas no estaban en el seguimiento.</p>`; }
+      toast(`Extranet: ${cambios.size} guías actualizadas.`); out.innerHTML=`<p class="note">Listo: ${ent} entregadas pasaron a Por facturar y ${ff} falsos fletes quedaron en la pestaña Falsos fletes. ${proc} con acuse siguen en proceso. ${sinAcuse} sin acuse solo actualizaron corte y plazo. ${noEsta} filas no estaban en el seguimiento.</p>`; }
     catch(err){ writeErr(err); } };
 }
 
