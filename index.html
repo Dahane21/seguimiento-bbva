@@ -144,6 +144,14 @@ tr.qopen td{background:var(--accent-soft)}
 .qp input[type=date]{padding:6px 8px;width:auto}
 .qd{display:inline-flex;align-items:center;gap:6px;flex-direction:row;font-size:13px;color:var(--ink)}
 #pqT,#pqB{flex:none;width:100%}
+.gq{position:relative;flex:0 1 360px;min-width:0}
+.gq input{width:100%;border:0;border-radius:6px;padding:9px 12px;font-size:14px;background:#fff;color:#0d1b2e}
+.gqres{position:absolute;right:0;top:calc(100% + 6px);width:min(560px,92vw);max-height:70vh;overflow-y:auto;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;box-shadow:0 14px 34px rgba(0,0,0,.28);z-index:30;display:flex;flex-direction:column}
+.gqi{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;text-align:left;border:0;border-bottom:1px solid var(--line);background:none;padding:10px 12px;cursor:pointer;color:var(--ink);font-size:13px}
+.gqi:hover{background:var(--accent-soft)}
+.gqd{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--accent-soft);color:var(--accent)}
+.gqr{flex-basis:100%;font-size:12px}
+@media (max-width:860px){.gq{flex:1 1 100%;order:5}}
 .vz{font-family:var(--mono);font-size:12px;white-space:nowrap}
 .vz-vencido{color:var(--bad);font-weight:700} .vz-hoy{color:var(--warn);font-weight:700;background:var(--warn-bg);padding:2px 6px;border-radius:4px} .vz-ok{color:var(--muted)}
 .corte{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;color:var(--muted)}
@@ -251,7 +259,6 @@ label input,label select,label textarea{color:var(--ink);font-size:14px;width:10
     </div>
     <nav id="tabs" aria-label="Secciones">
       <div class="grp">Operación</div>
-      <button data-v="seg"><span class="ic">≡</span><span class="lbl">Seguimiento</span><span class="n" id="nSeg"></span></button>
       <button data-v="pen"><span class="ic">◷</span><span class="lbl">Pendientes</span><span class="n" id="nPen"></span><span class="n red" id="nAl"></span></button>
       <button data-v="acu"><span class="ic">▣</span><span class="lbl">Acuses</span><span class="n" id="nAcu"></span></button>
       <button data-v="ff"><span class="ic">⚠</span><span class="lbl">Falsos fletes</span><span class="n hot" id="nFF"></span></button>
@@ -267,8 +274,9 @@ label input,label select,label textarea{color:var(--ink);font-size:14px;width:10
   </aside>
   <div class="content">
     <header class="band">
-      <div><small>Web compartida · Supabase</small><h1 id="viewTitle">Seguimiento</h1></div>
+      <div><small>Web compartida · Supabase</small><h1 id="viewTitle">Pendientes</h1></div>
       <span class="spacer"></span>
+      <div class="gq"><input type="search" id="gq" autocomplete="off" placeholder="Buscar cualquier guía (GR Tradel o GR BBVA)…" aria-label="Buscar cualquier guía"><div id="gqRes" class="gqres" hidden></div></div>
       <span class="sync"><span class="dot" id="syncDot"></span><span id="syncTxt">Conectando…</span></span>
       <button class="btn-w" id="btnExport">Descargar Excel</button>
       <button class="btn-w aq" id="btnNew">+ Nueva guía</button>
@@ -291,8 +299,8 @@ label input,label select,label textarea{color:var(--ink);font-size:14px;width:10
 <script>
 "use strict";
 // ---------- estado ----------
-const ST = { guias:new Map(), cfg:null, view:"seg", filt:{q:"", serv:"", est:"", alert:false}, sort:{k:"fguia",d:-1}, mes:"", limit:300, ffShow:"pend", loaded:false, canWrite:null, wide:false };
-try{ ST.wide = localStorage.getItem("segWide")==="1"; }catch(e){}
+const ST = { guias:new Map(), cfg:null, view:"pen", filt:{q:"", serv:"", est:"", alert:false}, sort:{k:"fguia",d:-1}, mes:"", limit:300, ffShow:"pend", loaded:false, canWrite:null, wide:false };
+try{ ST.wide = localStorage.getItem("segWide")==="1"; ST.penWide = localStorage.getItem("penWide")==="1"; ST.facWide = localStorage.getItem("facWide")!=="0"; }catch(e){ ST.facWide=true; }
 const TITLES={seg:"Seguimiento",pen:"Pendientes",acu:"Acuses recibidos",rev:"Por revisar (Economato / Mobiliario)",anu:"Guías anuladas",ff:"Falsos fletes",fac:"Por facturar",imp:"Importar data",cfg:"Ajustes"};
 
 const DEFAULT_CFG = { local:2, nacional:5, cierres:[] };
@@ -473,7 +481,7 @@ const sinDerivados=g=>{ const {tarT,priT,enTarifario,areaS,te,...r}=g; return r;
 // ---------- vistas ----------
 function render(){
   const all=list();
-  $("#nSeg").textContent=all.filter(g=>!facturable(g)).length;
+  const nSeg=$("#nSeg"); if(nSeg) nSeg.textContent=all.filter(g=>!facturable(g)).length;
   const pend=all.filter(g=>estado(g)!=="ENTREGADO");
   const nAl=pend.filter(enAlerta).length;
   $("#nPen").textContent=pend.length; $("#nAl").textContent=nAl||"";
@@ -592,6 +600,27 @@ const S = [
   {h:"F. entrega",k:"fent",v:g=>fmt(g.fent),f:g=>`<input type="date" class="inl" data-k="fent" value="${esc(g.fent||"")}" aria-label="Fecha de entrega de ${esc(g.grt)}">`},
 ];
 const money0=n=>n?money(n):"";
+const colH=(arr,h)=>arr.find(c=>c.h===h);
+const cRet={h:"F. retiro / FF",k:"fret",v:g=>g.ff&&g.ff.fecha?"FF "+fmt(g.ff.fecha):g.fret?"Retiro "+fmt(g.fret):"",f:g=>g.ff&&g.ff.fecha?`<span class="pill p-FALSO">FF</span> ${fmt(g.ff.fecha)}`:g.fret?`Retiro ${fmt(g.fret)}`:""};
+// Pendientes · vista completa (tu Excel, sin precios)
+function penCols(){
+  return [colH(S,"Acuse recibido"),C.vence,C.fguia,colH(S,"COD"),colH(S,"Origen → Destino"),C.grt,colH(S,"GR BBVA"),colH(S,"Bulto"),colH(S,"Peso kg"),colH(S,"Mini"),colH(S,"Tipo"),colH(S,"Consignado"),
+    {h:"OF",k:"ofc",f:g=>t(g.ofc)},{h:"Zona",k:"zona",f:g=>t(g.zona)},C.serv,{h:"Contenido",f:g=>t(g.cont),cls:"clip"},C.est,colH(S,"F. entrega"),{h:"Recepción",k:"recepcion",f:g=>t(g.recepcion),cls:"clip"},
+    {h:"TERR",k:"ti",f:g=>t(g.ti)},{h:"Territorio",k:"terr",f:g=>t(g.terr)},{h:"Representante",k:"rep",f:g=>t(g.rep),cls:"clip"},C.corte,
+    {h:"Manifiesto",k:"mani",f:g=>g.manif?`<span class="mono">${t(g.manif.num)}</span>`:""},{h:"F. despacho",f:g=>g.manif?t(g.manif.fecha):""},{h:"Agencia",f:g=>g.manif?t(g.manif.agencia):"",cls:"clip"},{h:"N° O/S",f:g=>g.manif?`<span class="mono">${t(g.manif.os)}</span>`:""},
+    cRet,{h:"Observación",f:g=>t(g.obs),cls:"clip"}];
+}
+// Por facturar (tu Excel de prefactura)
+function facColsExcel(){
+  const cst=(h,fn)=>({h,num:1,f:g=>{const c=costo(g);return c.has?fn(c,g):"";}});
+  return [C.sel,C.pre,colH(S,"Acuse recibido"),C.fguia,colH(S,"COD"),{h:"Oficina",k:"dest",f:g=>t(g.dest),cls:"clip"},C.grt,colH(S,"GR BBVA"),colH(S,"Bulto"),colH(S,"Peso kg"),colH(S,"Mini"),colH(S,"Tipo"),colH(S,"Consignado"),
+    {h:"OF",k:"ofc",f:g=>t(g.ofc)},{h:"Zona",k:"zona",f:g=>t(g.zona)},C.serv,{h:"Contenido",f:g=>t(g.cont),cls:"clip"},C.est,
+    {h:"F. entrega",k:"fent",v:g=>isFF(g)?"FF":fmt(g.fent),f:g=>isFF(g)?'<span class="pill p-FALSO">FF</span>':fmt(g.fent)},{h:"Recepción",k:"recepcion",f:g=>t(g.recepcion),cls:"clip"},
+    {h:"TERR",k:"ti",f:g=>t(g.ti)},{h:"Territorio",k:"terr",f:g=>t(g.terr)},
+    {h:"Tar x kg",num:1,f:g=>money0(num(g.tar))},{h:"1er kilo",num:1,f:g=>money0(num(g.pri))},cst("Peso rest.",c=>c.rest.toFixed(2)),cst("Flete x kilo",c=>money(c.fxk)),
+    {h:"Cond. FF",num:1,f:g=>money0(costo(g).cond)},{h:"Flete total",num:1,f:g=>{const c=costo(g);return c.has?money(c.flete):'<span class="muted">sin tarifa</span>';}},cst("IGV 18%",c=>money(c.igv)),C.total,
+    {h:"Factura",k:"factura",f:g=>t(g.factura)},{h:"Fecha fac.",f:g=>fmt(g.ffac)}];
+}
 const W = [S[0],C.fguia,C.serv,{h:"CO",k:"co",f:g=>t(g.co)},{h:"Of. origen",k:"orig",f:g=>t(g.orig),cls:"clip"},{h:"Oficina destino",k:"dest",f:g=>t(g.dest),cls:"clip"},{h:"Dirección",f:g=>t(g.dir),cls:"clip"},{h:"Área",k:"area",f:g=>t(g.area)},
   {h:"OF",k:"ofc",f:g=>t(g.ofc)},{h:"Zona",k:"zona",f:g=>t(g.zona)},{h:"TI",k:"ti",f:g=>t(g.ti)},{h:"Territorio",k:"terr",f:g=>t(g.terr)},{h:"Representante",k:"rep",f:g=>t(g.rep),cls:"clip"},C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>${g.grb?`<button class="cp" data-cp="${esc(g.grb)}" title="Copiar GR BBVA" aria-label="Copiar ${esc(g.grb)}">⧉</button>`:""}`},
   {h:"Bultos",num:1,f:g=>t(g.bultos)},{h:"Peso kg",num:1,f:g=>t(g.peso)},S[8],S[9],S[10],{h:"Contenido",f:g=>t(g.cont),cls:"clip"},
@@ -645,14 +674,16 @@ function vPen(){
   const fT=qn(ST.pT), fB=qn(ST.pB);
   const rows=pend.filter(g=>(!fT||qn(g.grt).includes(fT))&&(!fB||qn(g.grb).includes(fB))).sort((a,b)=>sortVal(a,"vence")-sortVal(b,"vence"));
   if((fT||fB) && rows.length===1) ST.openQ=rows[0]._id;
-  const cols=[C.vence,C.est,C.serv,C.fguia,C.dest,{h:"Representante",k:"rep",f:g=>t(g.rep)},C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>${g.grb?`<button class="cp" data-cp="${esc(g.grb)}" title="Copiar GR BBVA" aria-label="Copiar ${esc(g.grb)}">⧉</button>`:""}`},C.mani,C.agen,
+  const colsS=[C.vence,C.est,C.serv,C.fguia,C.dest,{h:"Representante",k:"rep",f:g=>t(g.rep)},C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>${g.grb?`<button class="cp" data-cp="${esc(g.grb)}" title="Copiar GR BBVA" aria-label="Copiar ${esc(g.grb)}">⧉</button>`:""}`},C.mani,C.agen,
     {h:"F. retiro / FF",k:"fret",v:g=>g.ff&&g.ff.fecha?"FF "+fmt(g.ff.fecha):g.fret?"Retiro "+fmt(g.fret):"",f:g=>g.ff&&g.ff.fecha?`<span class="pill p-FALSO">FF</span> ${fmt(g.ff.fecha)}`:g.fret?`Retiro ${fmt(g.fret)}`:""}];
+  const cols=ST.penWide?penCols():colsS;
   return `
   <div class="search"><div class="bar">
     <label class="t" style="flex:1 1 220px">GR Tradel (completa o últimos dígitos)<input type="search" id="pqT" value="${esc(ST.pT)}" placeholder="Ej. 210 o VU05-00000210"></label>
     <label class="t" style="flex:1 1 220px">GR BBVA (completa o últimos dígitos)<input type="search" id="pqB" value="${esc(ST.pB)}" placeholder="Ej. 3263 o TS01-00003263"></label></div>
-    <p class="note">Toca una guía para marcarla: <b>Entregado</b> (entregas) o <b>Retirado / Entregado</b> (recojos y traslados), con su fecha.</p></div>
-  ${(fT||fB)?`<div class="card">${rows.length?rowsTable(rows,cols,false,quickRow):`<div class="empty">Ninguna guía pendiente con esos dígitos.</div>`}</div>`:""}
+    <div class="bar"><p class="note" style="flex:1">Toca una guía para marcarla: <b>Entregado</b> (entregas) o <b>Retirado / Entregado</b> (recojos y traslados), con su fecha.</p>
+    <button class="btn ${ST.penWide?"pri":""}" id="penWideBtn">${ST.penWide?"◂ Vista simple":"Vista completa (mi Excel) ▸"}</button></div></div>
+  ${(fT||fB)?`<div class="card">${rows.length?rowsTable(rows,cols,ST.penWide,quickRow):`<div class="empty">Ninguna guía pendiente con esos dígitos.</div>`}</div>`:""}
   <div class="grid-sum">
     <div class="tile"><b>${pend.length}</b><span>Pendientes</span></div>
     <div class="tile ${al.length?"red":""}"><b>${al.length}</b><span>Vencidas (lead time del tarifario)</span></div>
@@ -660,7 +691,7 @@ function vPen(){
     <div class="tile"><b>${pend.filter(g=>estado(g)==="DESPACHADO").length}</b><span>Despachadas, por confirmar entrega</span></div>
     <div class="tile"><b>${pend.filter(g=>estado(g)==="RETIRADO").length}</b><span>Retiradas, por entregar</span></div>
   </div>
-  ${(fT||fB)?"":`<div class="card"><h2>Todo lo no entregado</h2>${pend.length||!ST.loaded?rowsTable(rows,cols,false,quickRow):`<div class="empty">No hay pendientes.</div>`}</div>`}`;
+  ${(fT||fB)?"":`<div class="card"><h2>Todo lo no entregado</h2>${pend.length||!ST.loaded?rowsTable(rows,cols,ST.penWide,quickRow):`<div class="empty">No hay pendientes.</div>`}</div>`}`;
 }
 function quickRow(g,n){
   if(ST.openQ!==g._id) return "";
@@ -850,11 +881,36 @@ function vFF(){
   <p class="note">Si se va a reprogramar, deja <b>¿Facturar?</b> en No. Cuando se reprograme, pon la fecha de reprogramación. Si no se reprograma, dale <b>Pasar a Por facturar</b>.</p>`;
 }
 
+function dondeEsta(g){
+  if(g.anulada) return ["Anuladas","anu"];
+  if(g.revision==="EXCLUIDA") return ["Excluida (Por revisar)","rev"];
+  if(porRevisar(g)) return ["Por revisar","rev"];
+  if(facturable(g)) return [g.pre?`Por facturar · PRE ${g.pre}`:"Por facturar","fac"];
+  if(estado(g)==="FALSO FLETE") return ["Falsos fletes","ff"];
+  return ["Pendientes","pen"];
+}
+function buscarGeneral(q){
+  const qn=x=>String(x||"").toUpperCase().replace(/[^A-Z0-9]/g,""), dig=x=>String(x||"").replace(/\D/g,"");
+  const k=qn(q), d=dig(q), letras=/[A-Z]/i.test(q);
+  if(k.length<3) return [];
+  return [...ST.guias.values()].filter(g=>letras?(qn(g.grt).includes(k)||qn(g.grb).includes(k)):(dig(g.grt).endsWith(d)||String(g.grb||"").split(/[\s\/,;]+/).some(x=>dig(x).endsWith(d)))).slice(0,12).map(enrich);
+}
+function pintarGQ(){
+  const box=$("#gqRes"), q=$("#gq").value.trim(); if(!box) return;
+  if(q.length<3){ box.hidden=true; box.innerHTML=""; return; }
+  const res=buscarGeneral(q);
+  box.innerHTML=res.length?res.map(g=>{ const [donde]=dondeEsta(g), r=ruta(g);
+    return `<button class="gqi" data-gq="${esc(g._id)}"><b class="mono">${esc(g.grt)}</b><span class="mono muted">${esc(g.grb)}</span>${pill(estado(g))}<span class="gqd">${esc(donde)}</span><span class="muted gqr">${esc(r.o||"")} → ${esc(r.d||"")}</span></button>`; }).join("")
+    :`<p class="note" style="padding:10px 12px">No hay ninguna guía con "${esc(q)}".</p>`;
+  box.hidden=false;
+  box.querySelectorAll("[data-gq]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); box.hidden=true; $("#gq").value=""; openDrawer(b.dataset.gq); });
+}
+
 function vAnu(){
   const rows=listAll().filter(g=>g.anulada);
   const cols=[{h:"",nof:1,f:g=>`<button class="btn sm" data-restaurar="${esc(g._id)}">Restaurar</button>`},{h:"F. anulación",k:"fanu",v:g=>fmt(g.anulada.fecha),f:g=>fmt(g.anulada.fecha)},{h:"Motivo",f:g=>t(g.anulada.motivo)||'<span class="muted">—</span>',cls:"clip"},
     {h:"Anulada por",f:g=>t(g.anulada.por)},C.fguia,C.serv,C.dest,C.grt,{h:"GR BBVA",k:"grb",f:g=>`<span class="mono">${t(g.grb)}</span>`},C.est];
-  return `<div class="search"><p class="note">Las guías anuladas no aparecen en Seguimiento, Pendientes, Acuses ni Por facturar, y no se vuelven a crear si las importas de nuevo. Si anulaste una por error, dale <b>Restaurar</b>.</p></div>
+  return `<div class="search"><p class="note">Las guías anuladas no aparecen en Pendientes, Acuses ni Por facturar, y no se vuelven a crear si las importas de nuevo. Si anulaste una por error, dale <b>Restaurar</b>.</p></div>
   <div class="card">${rows.length?rowsTable(rows,cols,false):`<div class="empty">${ST.loaded?"No hay guías anuladas.":"Cargando…"}</div>`}</div>`;
 }
 
@@ -894,6 +950,7 @@ function vFac(){
   return vFacHtml(all,pres,rows0,rows,tot,cols);
 }
 function facCols(){
+  if(ST.facWide) return facColsExcel();
   return [C.sel,C.pre,C.fguia,C.serv,C.est,{h:"COD",k:"co",f:g=>t(g.co)},C.dest,{h:"TI",k:"ti",f:g=>t(g.ti)},C.grt,C.grb,
     {h:"F. entrega / FF",k:"fent",f:g=>isFF(g)?'<b>FF</b>':fmt(g.fent)},
     {h:"Peso",num:1,f:g=>esc(g.peso)},
@@ -905,7 +962,7 @@ function vFacHtml(all,pres,rows0,rows,tot,cols){
   return `
   <div class="search">
     <div class="bar"><div class="seg">${btn("",`Sin PRE (${all.filter(g=>!g.pre).length})`)}${pres.map(p=>btn(p,`${esc(p)} (${all.filter(g=>g.pre===p).length})`)).join("")}${btn("*",`Todas (${all.length})`)}</div>
-      <span class="spacer"></span><button class="btn" id="copyTbl" ${rows.length?"":"disabled"}>Copiar tabla para prefactura</button></div>
+      <span class="spacer"></span><button class="btn ${ST.facWide?"":"pri"}" id="facWideBtn">${ST.facWide?"◂ Vista resumida":"Vista completa (mi Excel) ▸"}</button><button class="btn" id="copyTbl" ${rows.length?"":"disabled"}>Copiar tabla para prefactura</button></div>
     <div class="bar"><span class="muted">${ST.sel.size} seleccionadas</span>
       <label style="flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--ink)">PRE <input id="preVal" list="preList" value="${esc(preSugerido())}" style="width:130px"></label>
       <datalist id="preList">${[preSugerido(),...pres].map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
@@ -920,7 +977,7 @@ function vFacHtml(all,pres,rows0,rows,tot,cols){
     <div class="tile"><b>${money(tot.t)}</b><span>Total</span></div>
     ${tot.sin?`<div class="tile red"><b>${tot.sin}</b><span>Sin tarifa: revisa el COD o sube el tarifario</span></div>`:""}
   </div>
-  <div class="card">${rows0.length?rowsTable(rows0,cols,false):`<div class="empty">${ST.loaded?"No hay guías en esta vista.":"Cargando…"}</div>`}</div>
+  <div class="card">${rows0.length?rowsTable(rows0,cols,ST.facWide):`<div class="empty">${ST.loaded?"No hay guías en esta vista.":"Cargando…"}</div>`}</div>
   <p class="note">Aquí llega solo todo lo entregado y los falsos fletes marcados para facturar. Selecciona las que vas a facturar y ponles el <b>PRE</b> (el mes escrito). Al poner PRE, sus tarifas quedan fijas aunque luego cambie el tarifario. <b>Copiar tabla</b> copia la vista actual con las columnas de tu prefactura, en el mismo orden.</p>`;
 }
 async function setPre(val){
@@ -976,7 +1033,8 @@ function bindView(){
     el.onclick=e=>e.stopPropagation(); el.onkeydown=e=>e.stopPropagation();
     el.onchange=async()=>{ const id=el.closest("tr").dataset.id, k=el.dataset.k;
       const val=el.type==="checkbox"?(el.checked?today():""):el.value;
-      try{ await DB.patch(id,{[k]:val}); toast(k==="fent"?(val?"Entrega registrada.":"Fecha de entrega borrada."):(val?"Acuse recibido marcado.":"Acuse desmarcado.")); }catch(err){ writeErr(err); } };
+      const gg=enrich(ST.guias.get(id)||{}), extra=(k==="fent"&&val&&!gg.recepcion&&recepAuto(gg))?{recepcion:recepAuto(gg)}:{};
+      try{ await DB.patch(id,{[k]:val,...extra}); toast(k==="fent"?(val?"Entrega registrada.":"Fecha de entrega borrada."):(val?"Acuse recibido marcado.":"Acuse desmarcado.")); }catch(err){ writeErr(err); } };
   });
   m.querySelectorAll(".inlw").forEach(l=>l.onclick=e=>e.stopPropagation());
   m.querySelectorAll("tbody tr[data-id]").forEach(tr=>{
@@ -1041,6 +1099,8 @@ function bindView(){
   const sr=$("#saveRec"); if(sr) sr.onclick=()=>saveCfg({...cfg(),recLocal:num($("#rLocal").value)||3,recNac:num($("#rNac").value)||5},"Días de recojo guardados.");
   const sf=$("#saveFer"); if(sf) sf.onclick=()=>{ const l=$("#ferTxt").value.split(/\n+/).map(x=>toISO(x.trim())).filter(Boolean); saveCfg({...cfg(),feriados:[...new Set(l)].sort()},`${l.length} feriados guardados.`); };
   const cp=$("#copyTbl"); if(cp) cp.onclick=copyFac;
+  const pw=$("#penWideBtn"); if(pw) pw.onclick=()=>{ ST.penWide=!ST.penWide; try{localStorage.setItem("penWide",ST.penWide?"1":"0");}catch(e){} render(); };
+  const fw=$("#facWideBtn"); if(fw) fw.onclick=()=>{ ST.facWide=!ST.facWide; try{localStorage.setItem("facWide",ST.facWide?"1":"0");}catch(e){} render(); };
   const wb=$("#wideBtn"); if(wb) wb.onclick=()=>{ ST.wide=!ST.wide; try{localStorage.setItem("segWide",ST.wide?"1":"0");}catch(e){} render(); };
   // importar
   dropSetup("dropMan","fileMan",importManifest);
@@ -1092,7 +1152,7 @@ function renderDrawer(){
   $("#drawerRoot").innerHTML=`
   <div class="scrim" id="scrim"></div>
   <aside class="drawer" role="dialog" aria-modal="true" aria-label="Guía">
-    <div class="dh"><h3>${isNew?"Nueva guía":esc(g.grt)}</h3>${isNew?"":pill(e)}<span class="spacer"></span><button class="btn sm" id="dClose">Cerrar</button></div>
+    <div class="dh"><h3>${isNew?"Nueva guía":esc(g.grt)}</h3>${isNew?"":pill(e)}${isNew?"":`<span class="gqd" style="background:rgba(255,255,255,.18);color:#fff">${esc(dondeEsta(g)[0])}</span>`}<span class="spacer"></span><button class="btn sm" id="dClose">Cerrar</button></div>
     <div class="db">
       ${isNew?"":`<div class="flow">${flowFor.map((s,i)=>`<span class="pill ${pillCls(s)} ${i<=idx&&!["FALSO FLETE","REPROGRAMADO"].includes(e)||s===e?"done":""}">${s}</span>${i<flowFor.length-1?"→":""}`).join("")}${["FALSO FLETE","REPROGRAMADO"].includes(e)?pill(e):""}</div>
       <div class="quick">
@@ -1478,6 +1538,10 @@ async function exportXlsx(){
 $("#tabs").onclick=e=>{ const b=e.target.closest("button[data-v]"); if(!b) return; ST.view=b.dataset.v; ST.limit=300; render(); };
 $("#btnNew").onclick=()=>openDrawer("__new");
 $("#btnExport").onclick=exportXlsx;
+$("#gq").oninput=pintarGQ;
+$("#gq").onkeydown=e=>{ if(e.key==="Enter"){ const b=document.querySelectorAll("#gqRes [data-gq]"); if(b.length===1) b[0].click(); } if(e.key==="Escape"){ $("#gqRes").hidden=true; } };
+$("#gq").onclick=e=>e.stopPropagation();
+document.addEventListener("click",()=>{ const b=$("#gqRes"); if(b) b.hidden=true; });
 render();
 
 // ---------- conexión Supabase ----------
