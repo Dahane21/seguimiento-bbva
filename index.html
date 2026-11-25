@@ -484,7 +484,7 @@ function render(){
   const keepFocus=document.activeElement && document.activeElement.id;
   const caret=document.activeElement && document.activeElement.selectionStart;
   if(ST.view==="imp" && m.dataset.v==="imp") return; // no borrar una importación en curso
-  if(m.dataset.v!==ST.view) ST.sel=new Set();
+  if(m.dataset.v!==ST.view){ ST.sel=new Set(); ST.openQ=null; }
   ST.hfT=[]; closeHF();
   m.innerHTML = ({seg:vSeg,pen:vPen,acu:vAcu,ff:vFF,rev:vRev,anu:vAnu,fac:vFac,imp:vImp,cfg:vCfg})[ST.view]();
   m.dataset.v=ST.view;
@@ -661,12 +661,13 @@ function vPen(){
 function quickRow(g,n){
   if(ST.openQ!==g._id) return "";
   const e=estado(g), simple=g.serv==="ENTREGA";
-  const modo=simple?"ent":(e==="RETIRADO"||e==="DESPACHADO"?"ent":"ret");
+  const modo=simple||ST.view==="acu"||g.acuse?"ent":(e==="RETIRADO"||e==="DESPACHADO"?"ent":"ret");
   return `<tr class="qrow"><td colspan="${n}"><div class="qp" data-qid="${esc(g._id)}">
     <b class="mono">${esc(g.grt)}</b><span class="muted">${esc(g.serv)} · ${esc(g.dest)}</span>
     ${simple?`<span class="pill p-ENTREGADO">Entregado</span><input type="hidden" name="qm" value="ent">`:`<div class="seg"><button type="button" data-qm="ret" aria-pressed="${modo==="ret"}">Retirado</button><button type="button" data-qm="ent" aria-pressed="${modo==="ent"}">Entregado</button></div>`}
     <label class="qd">Fecha <input type="date" id="qDate" value="${today()}"></label>
-    <span class="muted" id="qRecep" ${modo==="ent"?"":"hidden"}>Recepción: <b>${esc(g.recepcion||recepAuto(g))}</b></span>
+    <label class="qd" id="qRecep" ${modo==="ent"?"":"hidden"}>Recepción <select id="qRecepSel">${(()=>{ const cur=g.recepcion||recepAuto(g), ops=["SELLO SUBGERENTE","SELLO ALMACEN","RECIBIDO MDA"]; if(!ops.includes(cur)) ops.unshift(cur);
+      return ops.map(o=>`<option ${o===cur?"selected":""}>${esc(o)}</option>`).join("")+`<option value="__otro">Otro…</option>`; })()}</select><input id="qRecepOtro" placeholder="Quién recibió" hidden style="width:160px"></label>
     <button class="btn pri" id="qSave" data-modo="${modo}">Guardar</button>
     <span class="spacer"></span>
     <button class="btn sm" id="qFF">Falso flete</button><button class="btn sm" id="qAnu">Anular</button><button class="btn sm" id="qMore">Ver detalle</button>
@@ -814,7 +815,7 @@ function vAcu(){
     ${sc.slice().reverse().map(x=>`<tr><td class="mono">${esc(x.txt.slice(0,40))}</td><td class="mono">${x.g?esc(x.g.grt):""}</td><td>${x.g?esc(x.g.dest):""}</td><td>${x.g?pill(estado(x.g)):""}</td>
       <td>${x.g?(x.ya?`<span class="muted">Ya tenía acuse del ${fmt(x.ya)}</span>`:`<b style="color:var(--ok)">✓ Acuse puesto</b>`):`<b style="color:var(--bad)">No está en el seguimiento</b>`}</td></tr>`).join("")}
   </tbody></table></div></div>`:""}
-  <div class="card"><h2>Con acuse, falta estado del Extranet (${con.length})</h2>${con.length?rowsTable(sorted(con),cols,false):`<div class="empty">${ST.loaded?"Todas las guías con acuse ya tienen su estado.":"Cargando…"}</div>`}</div>`;
+  <div class="card"><h2>Con acuse, falta estado del Extranet (${con.length}) <span class="muted" style="font-weight:400;font-size:13px">· toca una guía para marcarla</span></h2>${con.length?rowsTable(sorted(con),cols,false,quickRow):`<div class="empty">${ST.loaded?"Todas las guías con acuse ya tienen su estado.":"Cargando…"}</div>`}</div>`;
 }
 async function procesarScan(txt){
   txt=txt.trim(); if(!txt) return;
@@ -974,17 +975,19 @@ function bindView(){
   });
   m.querySelectorAll(".inlw").forEach(l=>l.onclick=e=>e.stopPropagation());
   m.querySelectorAll("tbody tr[data-id]").forEach(tr=>{
-    const go=ST.view==="pen"?()=>{ ST.openQ=ST.openQ===tr.dataset.id?null:tr.dataset.id; render(); }:()=>openDrawer(tr.dataset.id);
+    const go=(ST.view==="pen"||ST.view==="acu")?()=>{ ST.openQ=ST.openQ===tr.dataset.id?null:tr.dataset.id; render(); }:()=>openDrawer(tr.dataset.id);
     tr.onclick=go; tr.onkeydown=e=>{ if(e.key==="Enter") go(); };
   });
   const pqT=$("#pqT"); if(pqT) pqT.oninput=()=>{ ST.pT=pqT.value; ST.openQ=null; render(); };
   const pqB=$("#pqB"); if(pqB) pqB.oninput=()=>{ ST.pB=pqB.value; ST.openQ=null; render(); };
   const qp=m.querySelector(".qp");
+  if(qp&&$("#qRecepSel")) $("#qRecepSel").onchange=()=>{ const o=$("#qRecepSel").value==="__otro"; $("#qRecepOtro").hidden=!o; if(o) $("#qRecepOtro").focus(); };
   if(qp){ const id=qp.dataset.qid, g=enrich(ST.guias.get(id)||{}); qp.onclick=e=>e.stopPropagation();
     qp.querySelectorAll("[data-qm]").forEach(b=>b.onclick=()=>{ qp.querySelectorAll("[data-qm]").forEach(x=>x.setAttribute("aria-pressed",x===b)); $("#qSave").dataset.modo=b.dataset.qm; $("#qRecep").hidden=b.dataset.qm!=="ent"; });
     $("#qSave").onclick=async()=>{ const d=$("#qDate").value; if(!d) return toast("Pon la fecha.");
       const ent=$("#qSave").dataset.modo==="ent";
-      try{ await DB.patch(id, ent?{fent:d,recepcion:g.recepcion||recepAuto(g)}:{fret:d}); ST.openQ=null; toast(ent?`${g.grt} entregada el ${fmt(d)}.`:`${g.grt} retirada el ${fmt(d)}.`); render(); }catch(err){ writeErr(err); } };
+      const sel=$("#qRecepSel"), rec=sel&&sel.value==="__otro"?$("#qRecepOtro").value.trim():(sel?sel.value:(g.recepcion||recepAuto(g)));
+      try{ await DB.patch(id, ent?{fent:d,recepcion:rec||recepAuto(g)}:{fret:d}); ST.openQ=null; toast(ent?`${g.grt} entregada el ${fmt(d)}.`:`${g.grt} retirada el ${fmt(d)}.`); render(); }catch(err){ writeErr(err); } };
     $("#qFF").onclick=()=>{ $("#qFFBox").hidden=false; $("#qMot").focus(); };
     $("#qFFSave").onclick=async()=>{ const d=$("#qDate").value||today();
       try{ await DB.patch(id,{ff:{fecha:d,motivo:$("#qMot").value.trim(),reprog:"",facturar:false}}); ST.openQ=null; toast(`${g.grt}: falso flete registrado.`); render(); }catch(err){ writeErr(err); } };
