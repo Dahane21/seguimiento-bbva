@@ -1348,7 +1348,7 @@ async function saveCfg(next,msg){
 function filaAF(g){
   const c=costo(g), n=x=>x===""||x==null?"":String(x).replace(".",","), mf=g.manif||{};
   return [g.pre,fmt(g.acuse),mf.num||"",mf.agencia||"",String(mf.fecha||"").split(" ")[0],mf.os||"",fmt(g.fguia),g.co,g.oficinaT||g.dest,g.grt,g.grb,n(g.bultos),n(g.peso),g.usuario,g.rep,g.ofc,g.zona,g.serv,(g.cont||"").replace(/\s+/g," "),
-    g.vol,g.lead,fmt(fechaMaxAF(g)),estado(g),g.serv==="RECOJO"?(isFF(g)?"FF":fmt(g.fret||g.fent)):fmt(g.fret),isFF(g)?"FF":fmt(g.fent),g.recepcion,atrasoAF(g),cumpleAF(g),g.ti,n(g.tar),n(g.pri),n(c.rest),n(c.pvol),n(c.sub),n(c.cond),n(c.flete),n(c.igv),n(c.total),g.factura,fmt(g.ffac)];
+    g.vol,g.lead,fmt(fechaMaxAF(g)),estado(g),g.serv==="RECOJO"&&isFF(g)?"FF":fmt(g.fret),isFF(g)?"FF":fmt(g.fent),g.recepcion,atrasoAF(g),cumpleAF(g),g.ti,n(g.tar),n(g.pri),n(c.rest),n(c.pvol),n(c.sub),n(c.cond),n(c.flete),n(c.igv),n(c.total),g.factura,fmt(g.ffac)];
 }
 const H_AF=["PRE","ACUSE RECIBIDO","MT","AEROLINIA O AGENCIA","FECHA DE DESPACHO","ORDEN DE SERVICIO","FECHA DE LA GUÍA","CODE","OFICINA","GR TRADEL","GR BBVA","BULT.","PESO KG.","USUARIO","CONSIGNADO","OF","ZONA","SERVICIO","CONTENIDO","VOL","LEAD TIME","FECHA MAX DE ENTREGA","ESTADO","FECHA DE RETIRO","FECHA","RECEPCION","ATRASO","CUMPLE","TERR","TAR x Kg","1er kilo","PESO REST.","PESO VOL","SUB TOTAL PESO","COND FF","FLETE TOTAL","IGV 18%","TOTAL S/.","FACTURA","FECHA FAC"];
 function facRowsTSV(){
