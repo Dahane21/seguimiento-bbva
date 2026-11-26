@@ -390,13 +390,21 @@ function recepAuto(g){
   if(/^OF\./.test(d)) return "SELLO SUBGERENTE";
   return g.serv==="RECOJO"?"SELLO ALMACEN":"SELLO SUBGERENTE";
 }
+// Suma días hábiles (lun-sáb, sin feriados) manteniendo la hora; si cae sábado después de las 12:00 queda a las 12:00
+function masDiasHabiles(fecha,n){
+  let d=new Date(fecha), k=0;
+  while(k<n){ d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1,d.getHours(),d.getMinutes()); if(horario(d)) k++; }
+  const h=horario(d); if(h && d.getHours()+d.getMinutes()/60>h[1]) d.setHours(h[1],0,0,0);
+  return d;
+}
 function vence(g){
   if(esAF(g)){ const base=(g.ff&&g.ff.reprog)?g.ff.reprog:g.fguia, L=num(g.lead); return base&&L?sumarDiasHabiles(base,L):null; }
-  if(g.plazoExt){ const d=new Date(g.plazoExt); if(!isNaN(d)) return d; }
-  if(g.serv==="RECOJO" && g.fret) return sumarDiasHabiles(g.fret, g.terr==="NACIONAL"?(cfg().recNac||5):(cfg().recLocal||3));
+  if(g.plazoExt){ const d=new Date(g.plazoExt); if(!isNaN(d)) return d; }   // el plazo del Extranet ya trae los días extra de recojo
   const base=(g.ff&&g.ff.reprog)?g.ff.reprog:g.fguia; if(!base||!g.te) return null;
   const ini=new Date(base+"T00:00"); ini.setHours(g.corte==="1"?11:15,0,0,0);
-  return sumarHoras(ini,num(g.te));
+  const v=sumarHoras(ini,num(g.te));
+  if(v && g.serv==="RECOJO"){ const extra=g.ti==="LC"||(!g.ti&&g.terr!=="NACIONAL")?(cfg().recExtraLC??2):(cfg().recExtraNac??5); return masDiasHabiles(v,num(extra)); }
+  return v;
 }
 function venc(g){
   const e=estado(g); if(e==="ENTREGADO"||e==="FALSO FLETE") return null;
@@ -1080,9 +1088,9 @@ function vCfg(){
   return `
   <div class="card"><h2>Lead time</h2><div class="sec">
     <p class="note"><b>Entregas y traslados:</b> se cuentan las horas TE-REG / TE-EXP del tarifario desde el corte del día de emisión (1° corte 11:00, 2° corte 15:00), solo en horario de oficina: lunes a viernes 9:00–18:00 y sábado 9:00–12:00, sin domingos ni feriados.</p>
-    <p class="note"><b>Recojos:</b> antes del retiro usan las horas del tarifario; una vez recogida la carga, estos días hábiles:</p>
-    <div class="bar"><label>Lima<input type="number" id="rLocal" min="0" value="${cfg().recLocal||3}" style="width:90px"></label>
-    <label>Provincia<input type="number" id="rNac" min="0" value="${cfg().recNac||5}" style="width:90px"></label>
+    <p class="note"><b>Recojos (Informática):</b> las mismas horas del tarifario <b>más estos días hábiles adicionales</b>. Si el Extranet trae el plazo, se usa ese (ya los incluye).</p>
+    <div class="bar"><label>Local (LC)<input type="number" id="rLocal" min="0" value="${cfg().recExtraLC??2}" style="width:90px"></label>
+    <label>Terrestre / aéreo (TE, AE)<input type="number" id="rNac" min="0" value="${cfg().recExtraNac??5}" style="width:90px"></label>
     <button class="btn" id="saveRec" style="align-self:flex-end">Guardar</button></div>
   </div></div>
   <div class="card"><h2>Feriados (no cuentan para el lead time)</h2><div class="sec">
@@ -1172,7 +1180,7 @@ function bindView(){
   const pd=$("#preDel"); if(pd) pd.onclick=()=>setPre("");
   const ri=$("#revInc"); if(ri) ri.onclick=()=>setRevision("INCLUIDA");
   const rx=$("#revExc"); if(rx) rx.onclick=()=>setRevision("EXCLUIDA");
-  const sr=$("#saveRec"); if(sr) sr.onclick=()=>saveCfg({...cfg(),recLocal:num($("#rLocal").value)||3,recNac:num($("#rNac").value)||5},"Días de recojo guardados.");
+  const sr=$("#saveRec"); if(sr) sr.onclick=()=>saveCfg({...cfg(),recExtraLC:num($("#rLocal").value),recExtraNac:num($("#rNac").value)},"Días adicionales de recojo guardados.");
   const sf=$("#saveFer"); if(sf) sf.onclick=()=>{ const l=$("#ferTxt").value.split(/\n+/).map(x=>toISO(x.trim())).filter(Boolean); saveCfg({...cfg(),feriados:[...new Set(l)].sort()},`${l.length} feriados guardados.`); };
   const cp=$("#copyTbl"); if(cp) cp.onclick=copyFac;
   const dp=$("#dlPre"); if(dp) dp.onclick=descargarPrefactura;
