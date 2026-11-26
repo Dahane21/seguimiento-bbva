@@ -1027,7 +1027,7 @@ function vFacHtml(all,pres,rows0,rows,tot,cols){
   return `
   <div class="search">
     <div class="bar"><div class="seg">${btn("",`Sin PRE (${all.filter(g=>!g.pre).length})`)}${pres.map(p=>btn(p,`${esc(p)} (${all.filter(g=>g.pre===p).length})`)).join("")}${btn("*",`Todas (${all.length})`)}</div>
-      <span class="spacer"></span><button class="btn ${ST.facWide?"":"pri"}" id="facWideBtn">${ST.facWide?"◂ Vista resumida":"Vista completa (mi Excel) ▸"}</button><button class="btn" id="copyTbl" ${rows.length?"":"disabled"}>Copiar tabla para prefactura</button></div>
+      <span class="spacer"></span><button class="btn ${ST.facWide?"":"pri"}" id="facWideBtn">${ST.facWide?"◂ Vista resumida":"Vista completa (mi Excel) ▸"}</button><button class="btn pri" id="dlPre" title="Excel listo para tu página de prefactura">⬇ Descargar Excel para prefactura</button><button class="btn" id="copyTbl" ${rows.length?"":"disabled"}>Copiar tabla para prefactura</button></div>
     <div class="bar"><span class="muted">${ST.sel.size} seleccionadas</span>
       <label style="flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--ink)">PRE <input id="preVal" list="preList" value="${esc(preSugerido())}" style="width:130px"></label>
       <datalist id="preList">${[preSugerido(),...pres].map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
@@ -1175,6 +1175,7 @@ function bindView(){
   const sr=$("#saveRec"); if(sr) sr.onclick=()=>saveCfg({...cfg(),recLocal:num($("#rLocal").value)||3,recNac:num($("#rNac").value)||5},"Días de recojo guardados.");
   const sf=$("#saveFer"); if(sf) sf.onclick=()=>{ const l=$("#ferTxt").value.split(/\n+/).map(x=>toISO(x.trim())).filter(Boolean); saveCfg({...cfg(),feriados:[...new Set(l)].sort()},`${l.length} feriados guardados.`); };
   const cp=$("#copyTbl"); if(cp) cp.onclick=copyFac;
+  const dp=$("#dlPre"); if(dp) dp.onclick=descargarPrefactura;
   const pw=$("#penWideBtn"); if(pw) pw.onclick=()=>{ ST.penWide=!ST.penWide; try{localStorage.setItem("penWide",ST.penWide?"1":"0");}catch(e){} render(); };
   const fw=$("#facWideBtn"); if(fw) fw.onclick=()=>{ ST.facWide=!ST.facWide; try{localStorage.setItem("facWide",ST.facWide?"1":"0");}catch(e){} render(); };
   const wb=$("#wideBtn"); if(wb) wb.onclick=()=>{ ST.wide=!ST.wide; try{localStorage.setItem("segWide",ST.wide?"1":"0");}catch(e){} render(); };
@@ -1350,6 +1351,30 @@ function facRowsTSV(){
   const lines=rows.map(g=>{const c=costo(g);return [g.pre,fmt(g.acuse),fmt(g.fguia),g.co,g.dest,g.grt,g.grb,n(g.bultos),n(g.peso),g.mini,g.tipo,g.consignado,g.ofc,g.zona,g.serv,(g.cont||"").replace(/\s+/g," "),
     estado(g),isFF(g)?"FF":fmt(g.fent),g.recepcion,g.ti,g.terr,n(g.tar),n(g.pri),n(c.rest),n(c.fxk),n(c.cond),n(c.flete),n(c.igv),n(c.total),g.factura,fmt(g.ffac)].map(x=>String(x??"").replace(/\t/g," ")).join("\t");});
   return [h.join("\t"),...lines].join("\n");
+}
+// Excel para la página de prefactura: un solo PRE, nombres de columna exactos, fechas y números reales
+const H_INF=["PRE","ACUSE RECIBIDO","FECHA DE GUIA","COD","OFICINA","GR TRADEL","GR BBVA","BULTO","PESO KG.","MINI","TIPO","CONSIGNADO","OF","ZONA","SERVICIO","CONTENIDO","ESTADO","FECHA DE ENTREGA","RECEPCION","TERR","TERRITORIO","TAR x Kg","1er kilo","PESO REST.","FLETE Precio x kilo","COND. FF","FLETE TOTAL","IGV 18%","TOTAL S/.","FACTURA","FECHA FAC","FECHA DE PLAZO"];
+function fechaXL(isoStr){ if(!isoStr) return ""; const [y,m,d]=String(isoStr).slice(0,10).split("-").map(Number); return y?new Date(y,m-1,d,12):""; }
+const numXL=v=>{ const n=num(v); return n||v===0?n:(v===""||v==null?"":n); };
+function filaINFxl(g){
+  const c=costo(g), v=vence(g);
+  return [g.pre,fechaXL(g.acuse),fechaXL(g.fguia),g.co,g.dest,g.grt,g.grb,numXL(g.bultos),numXL(g.peso),g.mini,g.tipo,g.consignado,g.ofc,g.zona,g.serv,(g.cont||"").replace(/\s+/g," "),
+    estado(g),isFF(g)?"FF":fechaXL(g.fent),g.recepcion||"",g.ti,g.terr,numXL(g.tar),numXL(g.pri),c.rest,c.fxk,c.cond,c.flete,c.igv,c.total,g.factura||"",fechaXL(g.ffac),v?fechaXL(iso(v)):""];
+}
+function filaAFxl(g){
+  const r=filaAF(g), toD=x=>{ const m=String(x||"").match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m?new Date(+m[3],+m[2]-1,+m[1],12):x; };
+  const nIdx=[11,12,20,26,29,30,31,32,33,34,35,36,37], dIdx=[1,4,6,21,23,24,39];
+  return r.map((x,i)=>dIdx.includes(i)&&x!=="FF"?toD(x):(nIdx.includes(i)&&x!==""&&x!=null?num(x):x));
+}
+function descargarPrefactura(){
+  if(!ST.preF||ST.preF==="*") return toast("Primero elige un PRE (por ejemplo NOV-2026): tu página de prefactura acepta un solo PRE por archivo.");
+  const rows=ST.facVisible||facRows(); if(!rows.length) return toast("No hay guías con ese PRE.");
+  const af=ST.mod==="AF", aoa=[af?H_AF:H_INF,...rows.map(af?filaAFxl:filaINFxl)];
+  const ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:true,dateNF:"dd/mm/yyyy"});
+  ws["!cols"]=aoa[0].map(h=>({wch:Math.max(10,Math.min(40,String(h).length+4))}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"DATA");
+  XLSX.writeFile(wb,`PRE FACT - ${ST.preF} - ${af?"ACTIVO FIJO":"INFORMATICA"}.xlsx`,{cellDates:true});
+  toast(`Descargado: ${rows.length} guías del PRE ${ST.preF}.`);
 }
 async function copyFac(){
   const t=facRowsTSV();
