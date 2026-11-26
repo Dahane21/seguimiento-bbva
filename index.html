@@ -144,6 +144,9 @@ tr.qopen td{background:var(--accent-soft)}
 .qp{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 14px;position:sticky;left:0;max-width:min(1060px,calc(100vw - 340px))}
 @media (max-width:860px){.qp{max-width:calc(100vw - 40px)}}
 .qp input[type=date]{padding:6px 8px;width:auto}
+.qgo{display:inline-flex;align-items:center;gap:10px;flex-wrap:nowrap}
+.qbr{flex-basis:100%;height:0}
+.qinfo{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .qd{display:inline-flex;align-items:center;gap:6px;flex-direction:row;font-size:13px;color:var(--ink)}
 #pqT,#pqB{flex:none;width:100%}
 .gq{position:relative;flex:0 1 360px;min-width:0}
@@ -769,19 +772,21 @@ function vPen(){
   </div>
   ${(fT||fB)?"":`<div class="card"><h2>Todo lo no entregado</h2>${pend.length||!ST.loaded?rowsTable(rows,cols,ST.penWide,quickRow):`<div class="empty">No hay pendientes.</div>`}</div>`}`;
 }
+// "Retirado" solo tiene sentido cuando la guía sale de una oficina (recojo, oficina → sede / MDA / oficina)
+function puedeRetirar(g){ if(g.serv==="ENTREGA") return false; if(g.serv==="RECOJO") return true; return /^OF\./.test(ruta(g).o||""); }
 function quickRow(g,n){
   if(ST.openQ!==g._id) return "";
-  const e=estado(g), simple=g.serv==="ENTREGA";
+  const e=estado(g), simple=!puedeRetirar(g);
   const modo=simple||ST.view==="acu"||g.acuse?"ent":(e==="RETIRADO"||e==="DESPACHADO"?"ent":"ret");
   return `<tr class="qrow"><td colspan="${n}"><div class="qp" data-qid="${esc(g._id)}">
-    <b class="mono">${esc(g.grt)}</b><span class="muted">${esc(g.serv)} · ${esc(g.dest)}</span>
+    <b class="mono">${esc(g.grt)}</b><span class="muted qinfo" title="${esc(g.serv)} · ${esc(g.dest)}">${esc(g.serv)} · ${esc(g.dest)}</span>
     ${simple?`<span class="pill p-ENTREGADO">Entregado</span><input type="hidden" name="qm" value="ent">`:`<div class="seg"><button type="button" data-qm="ret" aria-pressed="${modo==="ret"}">Retirado</button><button type="button" data-qm="ent" aria-pressed="${modo==="ent"}">Entregado</button></div>`}
     <label class="qd">Fecha <input type="date" id="qDate" value="${today()}"></label>
-    <label class="qd" id="qRecep" ${modo==="ent"?"":"hidden"}>Recepción <select id="qRecepSel">${(()=>{ const cur=g.recepcion||recepAuto(g), ops=["SELLO SUBGERENTE","SELLO ALMACEN","SELLO MDA"]; if(cur&&!ops.includes(cur)) ops.unshift(cur);
+    <span class="qgo"><label class="qd" id="qRecep" ${modo==="ent"?"":"hidden"}>Recepción <select id="qRecepSel">${(()=>{ const cur=g.recepcion||recepAuto(g), ops=["SELLO SUBGERENTE","SELLO ALMACEN","SELLO MDA"]; if(cur&&!ops.includes(cur)) ops.unshift(cur);
       return ops.map(o=>`<option ${o===cur?"selected":""}>${esc(o)}</option>`).join("")+`<option value="__otro" ${cur?"":"selected"}>Otro…</option>`; })()}</select><input id="qRecepOtro" placeholder="${/\(PROVEEDOR\)/.test(ruta(g).d||"")?"Ej. SELLO "+esc((ruta(g).d||"").replace(/\s*\(PROVEEDOR\)/,"")):"Quién recibió"}" ${g.recepcion||recepAuto(g)?"hidden":""} style="width:180px"></label>
     <span class="qd" id="qRet" ${modo==="ret"?"":"hidden"}>Se guarda como: <b>SE RECOGIÓ</b></span>
-    <button class="btn pri" id="qSave" data-modo="${modo}">Guardar</button>
-    <span class="spacer"></span>
+    <button class="btn pri" id="qSave" data-modo="${modo}">Guardar</button></span>
+    <span class="qbr"></span>
     <button class="btn sm" id="qFF">Falso flete</button><button class="btn sm" id="qAnu">Anular</button><button class="btn sm" id="qMod">Pasar a ${esAF(g)?"Informática":"Activo fijo"}</button><button class="btn sm" id="qMore">Ver detalle</button>
     <div id="qAnuBox" class="bar" hidden style="width:100%"><input id="qAnuMot" placeholder="Motivo de la anulación" style="flex:1"><button class="btn sm" id="qAnuSave" style="color:var(--bad)">Anular guía</button></div>
     <div id="qFFBox" class="bar" hidden style="width:100%"><input id="qMot" placeholder="Motivo del falso flete" style="flex:1"><button class="btn sm" id="qFFSave">Guardar falso flete</button></div>
