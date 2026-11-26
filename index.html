@@ -428,11 +428,11 @@ function areaSerie(g){
   if(p==="TC" && MOB_RX.test(norm(g.cont))) return "MOBILIARIO?";
   return "INFORMATICA";
 }
-// Módulo: lo decide el ALMACÉN de My Gestwin (INFORMATICA → Informática; ECONOMATO / MOBILIARIO → Activo fijo). Se puede cambiar a mano.
+// Módulo: lo decide el ALMACÉN de My Gestwin (INFORMATICA → Informática; ECONOMATO / MOBILIARIO / SEGURIDAD → Activo fijo). Se puede cambiar a mano.
 function moduloDe(g){
   if(g.modulo) return g.modulo;
   const a=norm(g.area||"");
-  if(a) return /ECONOMATO|MOBILIARIO|ACTIVO/.test(a)?"AF":"INF";
+  if(a) return /ECONOMATO|MOBILIARIO|ACTIVO|SEGURIDAD/.test(a)?"AF":"INF";
   const p=String(g.grb||"").toUpperCase().slice(0,2); return (p==="TE"||p==="TA")?"AF":"INF";
 }
 const esAF=g=>moduloDe(g)==="AF";
