@@ -551,12 +551,27 @@ function render(){
   if(ST.view==="imp" && m.dataset.v==="imp") return; // no borrar una importación en curso
   if(m.dataset.v!==ST.view){ ST.sel=new Set(); ST.openQ=null; }
   ST.hfT=[]; closeHF();
+  const mismaVista=m.dataset.v===ST.view, scr=mismaVista?[...m.querySelectorAll(".tbl")].map(t=>[t.scrollTop,t.scrollLeft]):[], winY=window.scrollY;
   m.innerHTML = ({seg:vSeg,pen:vPen,acu:vAcu,ff:vFF,rev:vRev,anu:vAnu,fac:vFac,imp:vImp,cfg:vCfg})[ST.view]();
   m.dataset.v=ST.view;
   bindView();
+  if(mismaVista){ m.querySelectorAll(".tbl").forEach((t,i)=>{ if(scr[i]){ t.scrollTop=scr[i][0]; t.scrollLeft=scr[i][1]; } }); window.scrollTo(0,winY); }
+  fijarFila();
   if(keepFocus && ["q","pqT","pqB","scan","rq"].includes(keepFocus)){ const q=$("#"+keepFocus); if(q){ q.focus(); try{q.setSelectionRange(caret,caret);}catch(e){} } }
 }
 
+// Al abrir el panel rápido: la fila tocada se queda donde estaba y el panel se ve completo
+function fijarFila(){
+  const a=ST.anchor; ST.anchor=null; if(!a) return;
+  const tr=$("#main").querySelector(`tbody tr[data-id="${CSS.escape(a.id)}"]`); if(!tr) return;
+  const box=tr.closest(".tbl"), scrollBox=box&&box.scrollHeight>box.clientHeight?box:null;
+  const mover=dy=>{ if(!dy) return; if(scrollBox){ const t0=scrollBox.scrollTop; scrollBox.scrollTop+=dy; dy-=scrollBox.scrollTop-t0; } if(Math.abs(dy)>1) window.scrollBy(0,dy); };
+  mover(tr.getBoundingClientRect().top-a.top);
+  const q=tr.nextElementSibling; if(!q||!q.classList.contains("qrow")) return;
+  const lim=scrollBox?scrollBox.getBoundingClientRect():{top:0,bottom:window.innerHeight};
+  const top=lim.top+(scrollBox?0:90), bot=q.getBoundingClientRect().bottom;
+  if(bot>lim.bottom) mover(Math.min(bot-lim.bottom+8, tr.getBoundingClientRect().top-top));
+}
 function emptyMsg(){
   if(!ST.loaded) return `<div class="empty">Cargando guías…</div>`;
   return `<div class="empty">Todavía no hay guías. Agrégalas con <b>+ Nueva guía</b>, o en <b>Importar</b> sube el manifiesto o tu Excel de seguimiento actual.</div>`;
@@ -1117,7 +1132,7 @@ function bindView(){
   });
   m.querySelectorAll(".inlw").forEach(l=>l.onclick=e=>e.stopPropagation());
   m.querySelectorAll("tbody tr[data-id]").forEach(tr=>{
-    const go=(ST.view==="pen"||ST.view==="acu")?()=>{ ST.openQ=ST.openQ===tr.dataset.id?null:tr.dataset.id; render(); }:()=>openDrawer(tr.dataset.id);
+    const go=(ST.view==="pen"||ST.view==="acu")?()=>{ ST.anchor={id:tr.dataset.id,top:tr.getBoundingClientRect().top}; ST.openQ=ST.openQ===tr.dataset.id?null:tr.dataset.id; render(); }:()=>openDrawer(tr.dataset.id);
     tr.onclick=go; tr.onkeydown=e=>{ if(e.key==="Enter") go(); };
   });
   const pqT=$("#pqT"); if(pqT) pqT.oninput=()=>{ ST.pT=pqT.value; ST.openQ=null; render(); };
